@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-translator"
+version = "0.1.0"
+description = "Offline local translation pipeline for business documents using Argos + optional local LLM post-editing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  {name = "argos-llm-translate contributors"}
+]
+dependencies = [
+  "typer>=0.12",
+  "pydantic>=2.8",
+  "pyyaml>=6.0",
+  "python-docx>=1.1.0",
+  "python-pptx>=0.6.23",
+  "openpyxl>=3.1.5",
+  "pypdf>=4.3.1",
+  "argostranslate>=1.9.0"
+]
+
+[project.optional-dependencies]
+llm = ["llama-cpp-python>=0.2.86"]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.6"
+]
+
+[project.scripts]
+local-translator = "local_translator.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+
+target-version = "py310"

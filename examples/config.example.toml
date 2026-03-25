@@ -1,0 +1,10 @@
+source_lang = "fr"
+target_lang = "en"
+engine_mode = "hybrid"
+report = true
+
+[llm]
+enabled = true
+model_path = "./models/mistral-7b-instruct-q4_k_m.gguf"
+temperature = 0.1
+max_tokens = 256
