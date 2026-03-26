@@ -31,7 +31,16 @@ def create_docx_fixture(path: Path) -> None:
     doc = Document()
     doc.add_heading("Project Brief", level=1)
     doc.add_paragraph("This document describes migration milestones for the billing service.")
-    doc.add_paragraph("Key term: Service Level Objective and incident response policy.")
+
+    formatted = doc.add_paragraph()
+    formatted.add_run("Key term: ")
+    bold_run = formatted.add_run("Service Level Objective")
+    bold_run.bold = True
+    formatted.add_run(" and ")
+    italic_run = formatted.add_run("incident response policy")
+    italic_run.italic = True
+    formatted.add_run(".")
+
     table = doc.add_table(rows=2, cols=2)
     table.cell(0, 0).text = "Owner"
     table.cell(0, 1).text = "Status"
