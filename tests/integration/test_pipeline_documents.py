@@ -97,11 +97,24 @@ def test_docx_pipeline_with_fixture(tmp_path, monkeypatch):
     translated_doc = Document(str(output_path))
 
     paragraphs = translated_doc.paragraphs
-    assert [p.text for p in paragraphs[:2]] == [
-        f"Project Brief{TRANSLATED_TAG}",
-        f"This document describes migration milestones for the billing service.{TRANSLATED_TAG}",
-    ]
+    paragraph_texts = [paragraph.text for paragraph in paragraphs]
+
+    expected_heading = f"Project Brief{TRANSLATED_TAG}"
+    expected_intro = (
+        f"This document describes migration milestones for the billing service.{TRANSLATED_TAG}"
+    )
+
     assert paragraphs[0].style.name.startswith("Heading")
+    assert paragraph_texts[0] == expected_heading
+    assert paragraph_texts[1] == expected_intro
+
+    assert "Key term:" in paragraph_texts[2]
+    assert "Service Level Objective" in paragraph_texts[2]
+    assert "incident response policy" in paragraph_texts[2]
+
+    key_phrases_in_order = [expected_heading, expected_intro, paragraph_texts[2]]
+    ordered_indexes = [paragraph_texts.index(phrase) for phrase in key_phrases_in_order]
+    assert ordered_indexes == sorted(ordered_indexes)
 
     formatted_paragraph = paragraphs[2]
     assert formatted_paragraph.runs[1].bold is True
@@ -110,8 +123,18 @@ def test_docx_pipeline_with_fixture(tmp_path, monkeypatch):
 
     assert len(translated_doc.tables) == 1
     table = translated_doc.tables[0]
-    assert table.cell(0, 0).text == f"Owner{TRANSLATED_TAG}"
-    assert table.cell(1, 1).text == f"On Track{TRANSLATED_TAG}"
+    table_text = "\n".join(cell.text for row in table.rows for cell in row.cells)
+    assert "Owner" in table_text
+    assert "Status" in table_text
+    assert "Platform Team" in table_text
+    assert "On Track" in table_text
+
+    expected_cells = [
+        [f"Owner{TRANSLATED_TAG}", f"Status{TRANSLATED_TAG}"],
+        [f"Platform Team{TRANSLATED_TAG}", f"On Track{TRANSLATED_TAG}"],
+    ]
+    actual_cells = [[cell.text for cell in row.cells] for row in table.rows]
+    assert actual_cells == expected_cells
 
 
 def test_pptx_pipeline_with_fixture(tmp_path, monkeypatch):
