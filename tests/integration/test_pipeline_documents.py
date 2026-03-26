@@ -95,12 +95,23 @@ def test_docx_pipeline_with_fixture(tmp_path, monkeypatch):
 
     assert output_path.exists()
     translated_doc = Document(str(output_path))
-    paragraph_text = "\n".join(p.text for p in translated_doc.paragraphs)
-    assert "Project Brief" in paragraph_text
-    assert TRANSLATED_TAG in paragraph_text
+
+    paragraphs = translated_doc.paragraphs
+    assert [p.text for p in paragraphs[:2]] == [
+        f"Project Brief{TRANSLATED_TAG}",
+        f"This document describes migration milestones for the billing service.{TRANSLATED_TAG}",
+    ]
+    assert paragraphs[0].style.name.startswith("Heading")
+
+    formatted_paragraph = paragraphs[2]
+    assert formatted_paragraph.runs[1].bold is True
+    assert formatted_paragraph.runs[3].italic is True
+    assert all(TRANSLATED_TAG in run.text for run in formatted_paragraph.runs if run.text.strip())
 
     assert len(translated_doc.tables) == 1
-    assert translated_doc.tables[0].cell(1, 1).text == "On Track"
+    table = translated_doc.tables[0]
+    assert table.cell(0, 0).text == f"Owner{TRANSLATED_TAG}"
+    assert table.cell(1, 1).text == f"On Track{TRANSLATED_TAG}"
 
 
 def test_pptx_pipeline_with_fixture(tmp_path, monkeypatch):
