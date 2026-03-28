@@ -192,7 +192,29 @@ def restore_glossary_terms_with_stats(text: str, token_map: dict[str, str]) -> t
     restored = text
     replacements = 0
     for token, target in token_map.items():
-        if token in restored:
-            replacements += restored.count(token)
-            restored = restored.replace(token, target)
+        variants = _glossary_placeholder_variants(token)
+        for variant in variants:
+            matches = variant.findall(restored)
+            if not matches:
+                continue
+            replacements += len(matches)
+            restored = variant.sub(target, restored)
     return restored, replacements
+
+
+def _glossary_placeholder_variants(token: str) -> tuple[re.Pattern[str], ...]:
+    normalized = token.strip("_")
+    parts = [part for part in normalized.split("_") if part]
+    if not parts:
+        return (re.compile(re.escape(token)),)
+
+    exact = re.compile(re.escape(token))
+    # Some translators normalize internal placeholders by stripping underscores and
+    # turning separators into spaces, e.g. "__LT_GLOSSARY_TERM_0000__" becomes
+    # "LT GLOSSARY TERM 0000". Accept tightly scoped delimiter variations so the
+    # restoration step can still recover the protected glossary term.
+    normalized_pattern = re.compile(
+        rf"(?<!\w)_*{r'[\W_]*'.join(re.escape(part) for part in parts)}_*(?!\w)",
+        flags=re.IGNORECASE,
+    )
+    return exact, normalized_pattern

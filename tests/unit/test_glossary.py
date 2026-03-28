@@ -114,3 +114,17 @@ def test_glossary_protect_and_restore_round_trip():
     restored, restored_replacements = restore_glossary_terms_with_stats(protected, token_map)
     assert restored_replacements == 3
     assert restored == "La acceptance testing du work package 2, puis acceptance testing finale."
+
+
+def test_glossary_restore_handles_normalized_placeholder_variants():
+    restored, replacements = restore_glossary_terms_with_stats(
+        "The LT GLOSSARY TERM 0000 of LT GLOSSARY TERM 0001 2 starts after validation.",
+        {
+            "__LT_GLOSSARY_TERM_0000__": "acceptance testing",
+            "__LT_GLOSSARY_TERM_0001__": "work package",
+        },
+    )
+
+    assert replacements == 2
+    assert restored == "The acceptance testing of work package 2 starts after validation."
+    assert "LT GLOSSARY TERM" not in restored

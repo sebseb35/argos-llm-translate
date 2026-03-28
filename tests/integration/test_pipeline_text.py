@@ -43,6 +43,24 @@ class RolloutArgos:
         return text.replace("mise en production", "rollout")
 
 
+class PlaceholderNormalizingArgos:
+    def translate(self, text: str) -> str:
+        return (
+            text.replace("La ", "The ")
+            .replace(" du ", " for ")
+            .replace(" démarre", " starts")
+            .replace(" après", " after")
+            .replace(" validation", " validation")
+            .replace("__LT_GLOSSARY_TERM_0000__", "LT GLOSSARY TERM 0000")
+            .replace("__LT_GLOSSARY_TERM_0001__", "LT GLOSSARY TERM 0001")
+        )
+
+
+class PassthroughLLM:
+    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+        return translated
+
+
 def test_pipeline_argos_mode(monkeypatch):
     cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.ARGOS)
     pipeline = TranslationPipeline(cfg)
@@ -177,6 +195,83 @@ entries:
     assert result.report.fallback_count == 1
     assert "acceptance testing" in result.text
     assert "work package" in result.text
+
+
+def test_pipeline_argos_restores_normalized_glossary_placeholders(monkeypatch, tmp_path):
+    glossary_path = tmp_path / "fr-en.yaml"
+    glossary_path.write_text(
+        """
+source_language: fr
+target_language: en
+entries:
+  recette: acceptance testing
+  lot: work package
+""".strip(),
+        encoding="utf-8",
+    )
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.ARGOS, glossary_path=glossary_path)
+    pipeline = TranslationPipeline(cfg)
+    monkeypatch.setattr(pipeline, "argos", PlaceholderNormalizingArgos())
+
+    result = pipeline.translate_text("La recette du lot 2 démarre après validation.")
+    assert "acceptance testing" in result.text
+    assert "work package" in result.text
+    assert "LT GLOSSARY TERM" not in result.text
+    assert "recipe" not in result.text
+    assert "batch" not in result.text
+
+
+def test_pipeline_hybrid_restores_normalized_glossary_placeholders(monkeypatch, tmp_path):
+    glossary_path = tmp_path / "fr-en.yaml"
+    glossary_path.write_text(
+        """
+source_language: fr
+target_language: en
+entries:
+  recette: acceptance testing
+  lot: work package
+""".strip(),
+        encoding="utf-8",
+    )
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID, glossary_path=glossary_path)
+    cfg.llm.enabled = True
+    pipeline = TranslationPipeline(cfg)
+    monkeypatch.setattr(pipeline, "argos", PlaceholderNormalizingArgos())
+    monkeypatch.setattr(pipeline, "llm", PassthroughLLM())
+
+    result = pipeline.translate_text("La recette du lot 2 démarre après validation.")
+    assert "acceptance testing" in result.text
+    assert "work package" in result.text
+    assert "LT GLOSSARY TERM" not in result.text
+    assert "recipe" not in result.text
+    assert "batch" not in result.text
+
+
+def test_pipeline_hybrid_fallback_restores_normalized_glossary_placeholders(monkeypatch, tmp_path):
+    glossary_path = tmp_path / "fr-en.yaml"
+    glossary_path.write_text(
+        """
+source_language: fr
+target_language: en
+entries:
+  recette: acceptance testing
+  lot: work package
+""".strip(),
+        encoding="utf-8",
+    )
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID, glossary_path=glossary_path)
+    cfg.llm.enabled = True
+    pipeline = TranslationPipeline(cfg)
+    monkeypatch.setattr(pipeline, "argos", PlaceholderNormalizingArgos())
+    monkeypatch.setattr(pipeline, "llm", FailingLLM())
+
+    result = pipeline.translate_text("La recette du lot 2 démarre après validation.")
+    assert result.report.fallback_count == 1
+    assert "acceptance testing" in result.text
+    assert "work package" in result.text
+    assert "LT GLOSSARY TERM" not in result.text
+    assert "recipe" not in result.text
+    assert "batch" not in result.text
 
 
 def test_pipeline_enforces_multiword_and_repeated_glossary_terms(monkeypatch, tmp_path):
