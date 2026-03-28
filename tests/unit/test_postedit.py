@@ -131,3 +131,29 @@ def test_pipeline_hybrid_can_disable_llm_post_editing(monkeypatch):
 
     result = pipeline.translate_text("bonjour")
     assert result.text == "ARGOS:bonjour"
+
+
+def test_post_edit_rejects_glossary_tampering_in_strict_mode():
+    draft = "Use production deployment for this release"
+    result = post_edit_segment(
+        llm_engine=FakeLLM(response="Use rollout for this release"),
+        source_segment="Utiliser mise en production pour cette version",
+        translated_segment=draft,
+        glossary={"mise en production": "production deployment"},
+        llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
+    )
+    assert result == draft
+
+
+def test_post_edit_restores_glossary_placeholders_when_valid():
+    draft = "Use production deployment and password"
+    candidate = "Please use __LT_GLOSSARY_PROTECTED_0001__ and __LT_GLOSSARY_PROTECTED_0000__"
+    result = post_edit_segment(
+        llm_engine=FakeLLM(response=candidate),
+        source_segment="source",
+        translated_segment=draft,
+        glossary={"mise en production": "production deployment", "mot de passe": "password"},
+        llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
+    )
+    assert "production deployment" in result
+    assert "password" in result

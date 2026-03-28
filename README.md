@@ -73,8 +73,14 @@ pip install -e .[llm]
 # text mode
 local-translator text --from fr --to en --engine argos --content "Bonjour le monde"
 
+# text mode with glossary
+local-translator text --from fr --to en --engine argos --glossary examples/glossary.example.yaml --content "mot de passe oublié"
+
 # file mode
 local-translator translate input.docx --from fr --to en --output output.docx --engine argos
+
+# file mode with glossary
+local-translator translate input.docx --from fr --to en --output output.docx --engine hybrid --llm-model ./models/model.gguf --glossary examples/glossary.example.yaml
 
 # hybrid mode (Argos + local post-edit)
 local-translator translate input.md --from en --to fr --output out.md --engine hybrid --llm-model ./models/model.gguf
@@ -108,6 +114,45 @@ PDF support is intentionally narrow and explicit:
 - **Non-goal:** no layout-preserving or page-faithful translated PDF reconstruction.
 
 When extraction yields no meaningful text (for example blank or image-like PDFs), translation fails with an explicit error instead of producing low-quality output.
+
+
+
+## Glossary support (YAML/JSON)
+
+Glossary usage is optional and enabled per run with `--glossary`. Supported formats:
+
+- `.yaml` / `.yml`
+- `.json`
+
+Schema:
+
+```yaml
+source_language: fr      # optional but recommended
+target_language: en      # optional but recommended
+entries:
+  "recette": "acceptance testing"
+  "lot": "work package"
+  "maîtrise d'oeuvre": "project management"
+```
+
+Behavior and precedence:
+
+- glossary terms are applied deterministically using longest source match first,
+- replacements avoid changing substrings inside larger words (for word-like terms),
+- glossary is enforced before and after optional LLM post-editing,
+- in strict hybrid validation, glossary-protected terms are preserved and candidate edits that remove them are rejected.
+
+Validation and errors:
+
+- invalid structures fail with a clear `GlossaryError`,
+- empty source/target terms are rejected,
+- when `source_language`/`target_language` are provided, they must match the CLI `--from`/`--to` values.
+
+Current limitations:
+
+- matching is case-sensitive,
+- duplicate keys in YAML/JSON files are parser-defined and may overwrite earlier values,
+- this is exact string matching only (no fuzzy/semantic terminology memory).
 
 ## Known limits
 
