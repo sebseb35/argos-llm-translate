@@ -93,11 +93,25 @@ local-translator gui
 - `.docx`: paragraph-focused support
 - `.pptx`: text in shapes/placeholders (best effort)
 - `.xlsx`: textual cells only; formulas, numbers, non-text cells preserved
-- `.pdf`: text-native extraction only, no OCR; best effort reconstruction to text sidecar
+- `.pdf`: text-native extraction only; translated output is a `.translated.txt` sidecar (no PDF reconstruction)
+
+
+
+## PDF translation strategy
+
+PDF support is intentionally narrow and explicit:
+
+- **Supported input:** PDFs with native selectable text.
+- **Unsupported input:** scanned/image-only PDFs and OCR-based workflows.
+- **Pipeline:** extract text blocks -> segment/chunk -> translate -> optional post-edit -> write sidecar text.
+- **Output:** translated text sidecar file (recommended naming: `input.translated.txt`).
+- **Non-goal:** no layout-preserving or page-faithful translated PDF reconstruction.
+
+When extraction yields no meaningful text (for example blank or image-like PDFs), translation fails with an explicit error instead of producing low-quality output.
 
 ## Known limits
 
-- No OCR and no scanned PDF support.
+- PDF strategy is text-native only: scanned/image PDFs and OCR workflows are unsupported.
 - Complex layouts may not round-trip perfectly (`.pptx`, `.pdf`, complex `.docx`).
 - Very large documents may require improved segmentation strategy in future versions.
 

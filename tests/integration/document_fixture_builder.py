@@ -144,3 +144,10 @@ def create_pdf_fixture(path: Path) -> None:
 
     with path.open("wb") as output:
         writer.write(output)
+
+
+def create_blank_pdf_fixture(path: Path) -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    with path.open("wb") as output:
+        writer.write(output)
