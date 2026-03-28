@@ -220,6 +220,7 @@ Current limitations:
 - PDF strategy is text-native only: scanned/image PDFs and OCR workflows are unsupported.
 - Complex layouts may not round-trip perfectly (`.pptx`, `.pdf`, complex `.docx`).
 - Very large documents may require improved segmentation strategy in future versions.
+- Minimum CPU requirements: SSE4.1 required (Argos / CTranslate2 dependency)
 
 ## Confidentiality and security
 
