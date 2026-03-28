@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from local_translator.config import RuntimeConfig
 from local_translator.engines.argos_engine import ArgosEngine
 from local_translator.engines.llm_engine import LLMEngine
-from local_translator.glossary.store import apply_glossary, load_glossary
+from local_translator.glossary.store import apply_glossary_with_stats, load_glossary
 from local_translator.models.types import EngineMode, TranslationReport
 from local_translator.pipeline.chunker import segment_text
-from local_translator.pipeline.postedit import post_edit_segment
+from local_translator.pipeline.postedit import post_edit_segment_with_metrics
 
 
 @dataclass(slots=True)
@@ -36,6 +36,8 @@ class TranslationPipeline:
         segments = segment_text(text)
         outputs: list[str] = []
         errors: list[str] = []
+        fallback_count = 0
+        glossary_replacements = 0
 
         for segment in segments:
             try:
@@ -44,15 +46,19 @@ class TranslationPipeline:
                 else:
                     raw = self.argos.translate(segment)
 
-                with_glossary = apply_glossary(raw, self.glossary)
+                with_glossary, replacements = apply_glossary_with_stats(raw, self.glossary)
+                glossary_replacements += replacements
                 if self.config.engine_mode in {EngineMode.HYBRID, EngineMode.LLM}:
-                    final = post_edit_segment(
+                    outcome = post_edit_segment_with_metrics(
                         self.llm,
                         segment,
                         with_glossary,
                         self.glossary,
                         self.config.llm,
                     )
+                    final = outcome.text
+                    fallback_count += int(outcome.fallback_used)
+                    glossary_replacements += outcome.glossary_replacements
                 else:
                     final = with_glossary
                 outputs.append(final)
@@ -66,6 +72,8 @@ class TranslationPipeline:
             translated_count=len(outputs) - len(errors),
             skipped_count=0,
             elapsed_seconds=elapsed,
+            fallback_count=fallback_count,
+            glossary_replacements=glossary_replacements,
             errors=errors,
         )
         return TranslationResult(text=" ".join(outputs), report=report)

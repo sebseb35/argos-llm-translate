@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from local_translator.config import LLMSettings
 from local_translator.engines.llm_engine import LLMEngine
-from local_translator.glossary.store import Glossary, apply_glossary
+from local_translator.glossary.store import Glossary, apply_glossary_with_stats
 
 LOGGER = logging.getLogger(__name__)
 _PLACEHOLDER_PREFIX = "__LT_PROTECTED_"
@@ -44,6 +44,13 @@ class ProtectedText:
 class ValidationResult:
     is_valid: bool
     reason: str | None = None
+
+
+@dataclass(slots=True)
+class PostEditOutcome:
+    text: str
+    fallback_used: bool = False
+    glossary_replacements: int = 0
 
 
 class TokenProtector:
@@ -135,15 +142,15 @@ class PostEditValidator:
         return ValidationResult(True)
 
 
-def post_edit_segment(
+def post_edit_segment_with_metrics(
     llm_engine: LLMEngine | None,
     source_segment: str,
     translated_segment: str,
     glossary: Glossary | dict[str, str],
     llm_settings: LLMSettings,
-) -> str:
+) -> PostEditOutcome:
     if llm_engine is None:
-        return translated_segment
+        return PostEditOutcome(text=translated_segment)
 
     protector = TokenProtector()
     glossary_protector = GlossaryProtector()
@@ -161,7 +168,7 @@ def post_edit_segment(
         )
     except Exception:
         LOGGER.warning("LLM post-edit failed; falling back to Argos output.", exc_info=True)
-        return translated_segment
+        return PostEditOutcome(text=translated_segment, fallback_used=True)
 
     if llm_settings.strict_validation:
         validation = validator.validate_protected_output(
@@ -173,13 +180,34 @@ def post_edit_segment(
         )
         if not validation.is_valid:
             LOGGER.warning("LLM post-edit rejected (%s).", validation.reason)
-            return translated_segment if llm_settings.fallback_to_argos else candidate_protected
+            if llm_settings.fallback_to_argos:
+                return PostEditOutcome(text=translated_segment, fallback_used=True)
+            return PostEditOutcome(text=candidate_protected)
 
     restored = protector.restore(candidate_protected, translated_protected.token_map)
     restored = glossary_protector.restore(restored, glossary_protected.token_map)
     if _PLACEHOLDER_RE.search(restored) or _GLOSSARY_PLACEHOLDER_RE.search(restored):
         LOGGER.warning("LLM output still contains unresolved placeholders; using Argos output.")
-        return translated_segment if llm_settings.fallback_to_argos else restored
+        if llm_settings.fallback_to_argos:
+            return PostEditOutcome(text=translated_segment, fallback_used=True)
+        return PostEditOutcome(text=restored)
 
     # Enforce glossary one more time after post-edit for deterministic behavior.
-    return apply_glossary(restored, glossary)
+    rendered, replacements = apply_glossary_with_stats(restored, glossary)
+    return PostEditOutcome(text=rendered, glossary_replacements=replacements)
+
+
+def post_edit_segment(
+    llm_engine: LLMEngine | None,
+    source_segment: str,
+    translated_segment: str,
+    glossary: Glossary | dict[str, str],
+    llm_settings: LLMSettings,
+) -> str:
+    return post_edit_segment_with_metrics(
+        llm_engine=llm_engine,
+        source_segment=source_segment,
+        translated_segment=translated_segment,
+        glossary=glossary,
+        llm_settings=llm_settings,
+    ).text
