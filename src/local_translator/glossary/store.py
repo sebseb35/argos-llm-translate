@@ -108,18 +108,19 @@ def _term_pattern(term: str) -> re.Pattern[str]:
     return re.compile(escaped)
 
 
-def apply_glossary(text: str, glossary: Glossary | dict[str, str]) -> str:
+def apply_glossary_with_stats(text: str, glossary: Glossary | dict[str, str]) -> tuple[str, int]:
     if isinstance(glossary, Glossary):
         entries = glossary.entries
     else:
         entries = glossary
 
     if not entries:
-        return text
+        return text, 0
 
     ordered_terms = sorted(entries.keys(), key=lambda term: (-len(term), term))
     out = text
     placeholders: dict[str, str] = {}
+    replacements = 0
 
     for idx, source in enumerate(ordered_terms):
         target = entries[source]
@@ -127,11 +128,18 @@ def apply_glossary(text: str, glossary: Glossary | dict[str, str]) -> str:
         pattern = _term_pattern(source)
 
         def _replace(_: re.Match[str]) -> str:
+            nonlocal replacements
             placeholders[token] = target
+            replacements += 1
             return token
 
         out = pattern.sub(_replace, out)
 
     for token, target in placeholders.items():
         out = out.replace(token, target)
-    return out
+    return out, replacements
+
+
+def apply_glossary(text: str, glossary: Glossary | dict[str, str]) -> str:
+    rendered, _ = apply_glossary_with_stats(text, glossary)
+    return rendered

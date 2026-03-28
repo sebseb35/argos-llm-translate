@@ -23,4 +23,6 @@ class TranslationReport:
     translated_count: int
     skipped_count: int
     elapsed_seconds: float
+    fallback_count: int = 0
+    glossary_replacements: int = 0
     errors: list[str] = field(default_factory=list)

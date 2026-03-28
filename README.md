@@ -88,9 +88,24 @@ local-translator translate input.md --from en --to fr --output out.md --engine h
 # preview extracted segment count
 local-translator preview input.pdf
 
+# text mode with execution report (+ optional JSON export)
+local-translator text --from fr --to en --engine argos --content "Bonjour" --report --report-json run-report.json
+
 # GUI reserved for V2
 local-translator gui
 ```
+
+## Execution reporting
+
+Use `--report` on `text` and `translate` commands to print a structured execution summary:
+
+- segments processed,
+- fallback events (LLM -> Argos),
+- error count,
+- glossary replacement count,
+- elapsed processing time.
+
+Use `--report-json <path>` together with `--report` to export the same metrics as JSON for auditing.
 
 ## V1 supported formats
 
