@@ -47,12 +47,12 @@ class PlaceholderNormalizingArgos:
     def translate(self, text: str) -> str:
         return (
             text.replace("La ", "The ")
-            .replace(" du ", " for ")
+            .replace(" du ", "   of   ")
             .replace(" démarre", " starts")
             .replace(" après", " after")
             .replace(" validation", " validation")
-            .replace("__LT_GLOSSARY_TERM_0000__", "LT GLOSSARY TERM 0000")
-            .replace("__LT_GLOSSARY_TERM_0001__", "LT GLOSSARY TERM 0001")
+            .replace("__LT_GLOSSARY_TERM_0000__", "  LT GLOSSARY TERM 0000  ")
+            .replace("__LT_GLOSSARY_TERM_0001__", "  LT GLOSSARY TERM 0001  ")
         )
 
 
@@ -217,6 +217,7 @@ entries:
     assert "acceptance testing" in result.text
     assert "work package" in result.text
     assert "LT GLOSSARY TERM" not in result.text
+    assert "  " not in result.text
     assert "recipe" not in result.text
     assert "batch" not in result.text
 
@@ -243,6 +244,7 @@ entries:
     assert "acceptance testing" in result.text
     assert "work package" in result.text
     assert "LT GLOSSARY TERM" not in result.text
+    assert "  " not in result.text
     assert "recipe" not in result.text
     assert "batch" not in result.text
 
@@ -270,6 +272,7 @@ entries:
     assert "acceptance testing" in result.text
     assert "work package" in result.text
     assert "LT GLOSSARY TERM" not in result.text
+    assert "  " not in result.text
     assert "recipe" not in result.text
     assert "batch" not in result.text
 

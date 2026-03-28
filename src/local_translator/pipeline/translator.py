@@ -9,6 +9,7 @@ from local_translator.engines.llm_engine import LLMEngine
 from local_translator.glossary.store import (
     apply_glossary_with_stats,
     load_glossary,
+    normalize_restored_text,
     protect_glossary_terms_with_stats,
     restore_glossary_terms_with_stats,
 )
@@ -75,6 +76,7 @@ class TranslationPipeline:
                 glossary_replacements += post_restore_replacements
                 final, post_replacements = apply_glossary_with_stats(final, self.glossary)
                 glossary_replacements += post_replacements
+                final = normalize_restored_text(final)
                 outputs.append(final)
             except Exception as exc:  # best effort fallback
                 errors.append(str(exc))

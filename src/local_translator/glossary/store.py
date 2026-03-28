@@ -202,6 +202,26 @@ def restore_glossary_terms_with_stats(text: str, token_map: dict[str, str]) -> t
     return restored, replacements
 
 
+def normalize_restored_text(text: str) -> str:
+    # Collapse repeated inline spacing introduced by placeholder restoration while
+    # preserving explicit line breaks and paragraph boundaries.
+    lines = text.splitlines(keepends=True)
+    normalized_lines: list[str] = []
+
+    for line in lines:
+        if line.endswith("\r\n"):
+            content, newline = line[:-2], "\r\n"
+        elif line.endswith("\n"):
+            content, newline = line[:-1], "\n"
+        else:
+            content, newline = line, ""
+
+        content = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", content)
+        normalized_lines.append(content + newline)
+
+    return "".join(normalized_lines)
+
+
 def _glossary_placeholder_variants(token: str) -> tuple[re.Pattern[str], ...]:
     normalized = token.strip("_")
     parts = [part for part in normalized.split("_") if part]

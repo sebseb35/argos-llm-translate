@@ -6,6 +6,7 @@ from local_translator.glossary.store import (
     GlossaryError,
     apply_glossary,
     load_glossary,
+    normalize_restored_text,
     protect_glossary_terms_with_stats,
     restore_glossary_terms_with_stats,
 )
@@ -128,3 +129,17 @@ def test_glossary_restore_handles_normalized_placeholder_variants():
     assert replacements == 2
     assert restored == "The acceptance testing of work package 2 starts after validation."
     assert "LT GLOSSARY TERM" not in restored
+
+
+def test_normalize_restored_text_collapses_inline_spacing_only():
+    normalized = normalize_restored_text(
+        "The   acceptance testing   of   work package   2 starts after validation.\n\n"
+        "  - keep markdown indentation\n"
+        "Second   paragraph."
+    )
+
+    assert normalized == (
+        "The acceptance testing of work package 2 starts after validation.\n\n"
+        "  - keep markdown indentation\n"
+        "Second paragraph."
+    )
