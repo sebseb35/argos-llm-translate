@@ -156,23 +156,46 @@ def test_pptx_pipeline_with_fixture(tmp_path, monkeypatch):
     assert any(TRANSLATED_TAG in text for text in texts)
 
 
-def test_xlsx_pipeline_preserves_formulas_and_numbers(tmp_path, monkeypatch):
+def test_xlsx_pipeline_preserves_structure_and_non_text_cells(tmp_path, monkeypatch):
     input_path = prepare_fixture_path(tmp_path, "sample.xlsx")
     output_path = tmp_path / "sample.translated.xlsx"
 
     run_document_pipeline(input_path, output_path, monkeypatch)
 
     assert output_path.exists()
-    workbook = load_workbook(str(output_path))
-    overview = workbook["Overview"]
 
+    original_workbook = load_workbook(str(input_path))
+    translated_workbook = load_workbook(str(output_path))
+
+    assert translated_workbook.sheetnames == original_workbook.sheetnames
+    assert len(translated_workbook.worksheets) == len(original_workbook.worksheets)
+
+    overview_original = original_workbook["Overview"]
+    overview = translated_workbook["Overview"]
+
+    assert overview.dimensions == overview_original.dimensions
+
+    # Text cells are translated.
+    assert overview["A1"].value == f"Metric{TRANSLATED_TAG}"
+    assert overview["B3"].value == f"Forecast remains conservative{TRANSLATED_TAG}"
+    assert overview["B6"].value == f"00123{TRANSLATED_TAG}"
+    assert overview["B9"].value == f"  keep spacing{TRANSLATED_TAG}  "
+
+    # Non-text cells remain unchanged.
     assert overview["B2"].value == 125000
-    assert overview["B4"].value == "=B2*1.1"
-    assert TRANSLATED_TAG in overview["A1"].value
-    assert TRANSLATED_TAG in overview["B3"].value
+    assert overview["B4"].value == "=SUM(B2:B3)"
+    assert overview["B7"].value == overview_original["B7"].value
+    assert overview["B7"].is_date is True
+    assert overview["B8"].value is True
+    assert overview["B10"].value == overview_original["B10"].value
+    assert overview["B11"].value is None
 
-    risks = workbook["Risks"]
-    assert TRANSLATED_TAG in risks["A2"].value
+    risks_original = original_workbook["Risks"]
+    risks = translated_workbook["Risks"]
+
+    assert risks.dimensions == risks_original.dimensions
+    assert risks["A2"].value == f"Vendor delay{TRANSLATED_TAG}"
+    assert risks["D5"].value == f"Mitigation notes{TRANSLATED_TAG}"
 
 
 def test_pdf_text_pipeline_writes_translated_text_output(tmp_path, monkeypatch):
