@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from docx import Document
 from openpyxl import load_workbook
 from pypdf import PdfReader
@@ -12,6 +13,7 @@ from local_translator.models.types import EngineMode
 from local_translator.pipeline.translator import TranslationPipeline
 from local_translator.reconstructors.registry import get_extractor
 from tests.integration.document_fixture_builder import (
+    create_blank_pdf_fixture,
     create_docx_fixture,
     create_pdf_fixture,
     create_pptx_fixture,
@@ -45,6 +47,8 @@ def prepare_fixture_path(tmp_path: Path, file_name: str) -> Path:
         create_xlsx_fixture(fixture_path)
     elif file_name == "sample.pdf":
         create_pdf_fixture(fixture_path)
+    elif file_name == "blank.pdf":
+        create_blank_pdf_fixture(fixture_path)
     else:  # pragma: no cover - guard for future updates
         raise ValueError(f"Unsupported fixture request: {file_name}")
     return fixture_path
@@ -218,7 +222,7 @@ def test_xlsx_pipeline_preserves_structure_and_non_text_cells(tmp_path, monkeypa
     assert risks["D5"].value == f"Mitigation notes{TRANSLATED_TAG}"
 
 
-def test_pdf_text_pipeline_writes_translated_text_output(tmp_path, monkeypatch):
+def test_pdf_text_pipeline_writes_translated_text_sidecar_output(tmp_path, monkeypatch):
     input_path = prepare_fixture_path(tmp_path, "sample.pdf")
     output_path = tmp_path / "sample.translated.txt"
 
@@ -230,5 +234,33 @@ def test_pdf_text_pipeline_writes_translated_text_output(tmp_path, monkeypatch):
 
     assert output_path.exists()
     content = output_path.read_text(encoding="utf-8")
+    assert content.endswith("\n")
     assert "Text Native PDF Sample" in content
+    assert "Contains quarterly metrics" in content
     assert TRANSLATED_TAG in content
+
+
+def test_pdf_pipeline_rejects_non_text_output_extension(tmp_path, monkeypatch):
+    input_path = prepare_fixture_path(tmp_path, "sample.pdf")
+    output_path = tmp_path / "sample.translated.pdf"
+
+    with pytest.raises(ValueError, match="text sidecar outputs only"):
+        run_document_pipeline(input_path, output_path, monkeypatch)
+
+
+def test_pdf_pipeline_rejects_image_like_pdf(tmp_path, monkeypatch):
+    input_path = prepare_fixture_path(tmp_path, "blank.pdf")
+    output_path = tmp_path / "blank.translated.txt"
+
+    with pytest.raises(ValueError, match="Only text-native PDFs are supported"):
+        run_document_pipeline(input_path, output_path, monkeypatch)
+
+    assert not output_path.exists()
+
+
+def test_pdf_pipeline_rejects_invalid_pdf(tmp_path, monkeypatch):
+    input_path = tmp_path / "broken.pdf"
+    input_path.write_text("not a real pdf", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid PDF file"):
+        run_document_pipeline(input_path, tmp_path / "broken.translated.txt", monkeypatch)
