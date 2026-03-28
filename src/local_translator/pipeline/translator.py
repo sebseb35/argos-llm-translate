@@ -22,7 +22,7 @@ class TranslationPipeline:
     def __init__(self, config: RuntimeConfig):
         self.config = config
         self.argos = ArgosEngine(config.source_lang, config.target_lang)
-        self.glossary = load_glossary(config.glossary_path)
+        self.glossary = load_glossary(config.glossary_path, config.source_lang, config.target_lang)
         self.llm = None
         if config.engine_mode in {EngineMode.HYBRID, EngineMode.LLM} and config.llm.enabled:
             self.llm = LLMEngine(

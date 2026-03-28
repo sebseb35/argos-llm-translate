@@ -1,6 +1,92 @@
-from local_translator.glossary.store import apply_glossary
+import json
+
+import pytest
+
+from local_translator.glossary.store import GlossaryError, apply_glossary, load_glossary
 
 
-def test_apply_glossary_replace():
-    out = apply_glossary("mot de passe oublié", {"mot de passe": "password"})
-    assert "password" in out
+def test_load_glossary_yaml_schema(tmp_path):
+    glossary_path = tmp_path / "glossary.fr-en.yaml"
+    glossary_path.write_text(
+        """
+source_language: fr
+target_language: en
+entries:
+  recette: acceptance testing
+  lot: work package
+  "maîtrise d'oeuvre": project management
+""".strip(),
+        encoding="utf-8",
+    )
+
+    glossary = load_glossary(glossary_path, source_lang="fr", target_lang="en")
+    assert glossary.source_language == "fr"
+    assert glossary.target_language == "en"
+    assert glossary.entries["recette"] == "acceptance testing"
+
+
+def test_load_glossary_json_schema(tmp_path):
+    glossary_path = tmp_path / "glossary.fr-en.json"
+    glossary_path.write_text(
+        json.dumps(
+            {
+                "source_language": "fr",
+                "target_language": "en",
+                "entries": {
+                    "mise en production": "production deployment",
+                    "mot de passe": "password",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    glossary = load_glossary(glossary_path)
+    assert glossary.entries["mot de passe"] == "password"
+
+
+def test_load_glossary_invalid_file_fails_clearly(tmp_path):
+    glossary_path = tmp_path / "invalid.yaml"
+    glossary_path.write_text("entries:\n  valid: ok\n  '': nope", encoding="utf-8")
+
+    with pytest.raises(GlossaryError, match="empty source"):
+        load_glossary(glossary_path)
+
+
+def test_load_glossary_language_mismatch_fails(tmp_path):
+    glossary_path = tmp_path / "glossary.yaml"
+    glossary_path.write_text(
+        """
+source_language: fr
+target_language: en
+entries:
+  lot: work package
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GlossaryError, match="source language mismatch"):
+        load_glossary(glossary_path, source_lang="en", target_lang="fr")
+
+
+def test_apply_glossary_overrides_translation():
+    out = apply_glossary("please keep mot de passe as term", {"mot de passe": "password"})
+    assert out == "please keep password as term"
+
+
+def test_apply_glossary_prefers_longer_terms_first():
+    out = apply_glossary(
+        "maîtrise d'oeuvre et maîtrise",
+        {"maîtrise": "mastery", "maîtrise d'oeuvre": "project management"},
+    )
+    assert out == "project management et mastery"
+
+
+def test_apply_glossary_avoids_partial_word_corruption():
+    out = apply_glossary("catalog cat concatenation", {"cat": "dog"})
+    assert out == "catalog dog concatenation"
+
+
+def test_apply_glossary_replaces_repeated_terms():
+    out = apply_glossary("mot de passe, mot de passe", {"mot de passe": "password"})
+    assert out == "password, password"

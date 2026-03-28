@@ -48,10 +48,17 @@ def text(
     target_lang: str = typer.Option(..., "--to"),
     engine: str = typer.Option("argos", "--engine"),
     content: str = typer.Option(..., "--content"),
+    glossary: Path | None = typer.Option(None, "--glossary"),
     llm_model: Path | None = typer.Option(None, "--llm-model"),
 ):
     llm_cfg = LLMSettings(enabled=engine in {"hybrid", "llm"}, model_path=llm_model)
-    cfg = RuntimeConfig(source_lang=source_lang, target_lang=target_lang, engine_mode=engine, llm=llm_cfg)
+    cfg = RuntimeConfig(
+        source_lang=source_lang,
+        target_lang=target_lang,
+        engine_mode=engine,
+        glossary_path=glossary,
+        llm=llm_cfg,
+    )
     pipeline = TranslationPipeline(cfg)
     typer.echo(pipeline.translate_text(content).text)
 
