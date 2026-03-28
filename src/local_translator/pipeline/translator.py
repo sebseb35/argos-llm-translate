@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from local_translator.config import RuntimeConfig
 from local_translator.engines.argos_engine import ArgosEngine
 from local_translator.engines.llm_engine import LLMEngine
-from local_translator.glossary.store import apply_glossary_with_stats, load_glossary
+from local_translator.glossary.store import (
+    apply_glossary_with_stats,
+    load_glossary,
+    protect_glossary_terms_with_stats,
+    restore_glossary_terms_with_stats,
+)
 from local_translator.models.types import EngineMode, TranslationReport
 from local_translator.pipeline.chunker import segment_text
 from local_translator.pipeline.postedit import post_edit_segment_with_metrics
@@ -41,10 +46,15 @@ class TranslationPipeline:
 
         for segment in segments:
             try:
+                prepared_segment, glossary_token_map, pre_replacements = protect_glossary_terms_with_stats(
+                    segment, self.glossary
+                )
+                glossary_replacements += pre_replacements
+
                 if self.config.engine_mode == EngineMode.LLM:
-                    raw = segment
+                    raw = prepared_segment
                 else:
-                    raw = self.argos.translate(segment)
+                    raw = self.argos.translate(prepared_segment)
 
                 with_glossary, replacements = apply_glossary_with_stats(raw, self.glossary)
                 glossary_replacements += replacements
@@ -61,6 +71,10 @@ class TranslationPipeline:
                     glossary_replacements += outcome.glossary_replacements
                 else:
                     final = with_glossary
+                final, post_restore_replacements = restore_glossary_terms_with_stats(final, glossary_token_map)
+                glossary_replacements += post_restore_replacements
+                final, post_replacements = apply_glossary_with_stats(final, self.glossary)
+                glossary_replacements += post_replacements
                 outputs.append(final)
             except Exception as exc:  # best effort fallback
                 errors.append(str(exc))

@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from local_translator.glossary.store import GlossaryError, apply_glossary, load_glossary
+from local_translator.glossary.store import (
+    GlossaryError,
+    apply_glossary,
+    load_glossary,
+    protect_glossary_terms_with_stats,
+    restore_glossary_terms_with_stats,
+)
 
 
 def test_load_glossary_yaml_schema(tmp_path):
@@ -90,3 +96,21 @@ def test_apply_glossary_avoids_partial_word_corruption():
 def test_apply_glossary_replaces_repeated_terms():
     out = apply_glossary("mot de passe, mot de passe", {"mot de passe": "password"})
     assert out == "password, password"
+
+
+def test_apply_glossary_preserves_simple_title_case():
+    out = apply_glossary("Recette validée", {"recette": "acceptance testing"})
+    assert out == "Acceptance testing validée"
+
+
+def test_glossary_protect_and_restore_round_trip():
+    protected, token_map, replacements = protect_glossary_terms_with_stats(
+        "La recette du lot 2, puis recette finale.",
+        {"recette": "acceptance testing", "lot": "work package"},
+    )
+    assert replacements == 3
+    assert "__LT_GLOSSARY_TERM_" in protected
+
+    restored, restored_replacements = restore_glossary_terms_with_stats(protected, token_map)
+    assert restored_replacements == 3
+    assert restored == "La acceptance testing du work package 2, puis acceptance testing finale."

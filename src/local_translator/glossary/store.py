@@ -100,12 +100,23 @@ def load_glossary(path: Path | None, source_lang: str | None = None, target_lang
     return glossary
 
 
-def _term_pattern(term: str) -> re.Pattern[str]:
+def _term_pattern(term: str, ignore_case: bool = False) -> re.Pattern[str]:
     escaped = re.escape(term)
+    flags = re.IGNORECASE if ignore_case else 0
     # Use word boundaries for terms containing word chars to avoid replacing inside other words.
     if re.search(r"\w", term):
-        return re.compile(rf"(?<!\w){escaped}(?!\w)")
-    return re.compile(escaped)
+        return re.compile(rf"(?<!\w){escaped}(?!\w)", flags=flags)
+    return re.compile(escaped, flags=flags)
+
+
+def _case_aware_target(source_match: str, target: str) -> str:
+    if not source_match:
+        return target
+    if source_match.isupper():
+        return target.upper()
+    if source_match[0].isupper() and source_match[1:].islower():
+        return target[:1].upper() + target[1:]
+    return target
 
 
 def apply_glossary_with_stats(text: str, glossary: Glossary | dict[str, str]) -> tuple[str, int]:
@@ -125,11 +136,11 @@ def apply_glossary_with_stats(text: str, glossary: Glossary | dict[str, str]) ->
     for idx, source in enumerate(ordered_terms):
         target = entries[source]
         token = f"__LT_GLOSSARY_REPLACE_{idx:04d}__"
-        pattern = _term_pattern(source)
+        pattern = _term_pattern(source, ignore_case=True)
 
-        def _replace(_: re.Match[str]) -> str:
+        def _replace(match: re.Match[str]) -> str:
             nonlocal replacements
-            placeholders[token] = target
+            placeholders[token] = _case_aware_target(match.group(0), target)
             replacements += 1
             return token
 
@@ -143,3 +154,45 @@ def apply_glossary_with_stats(text: str, glossary: Glossary | dict[str, str]) ->
 def apply_glossary(text: str, glossary: Glossary | dict[str, str]) -> str:
     rendered, _ = apply_glossary_with_stats(text, glossary)
     return rendered
+
+
+def protect_glossary_terms_with_stats(text: str, glossary: Glossary | dict[str, str]) -> tuple[str, dict[str, str], int]:
+    if isinstance(glossary, Glossary):
+        entries = glossary.entries
+    else:
+        entries = glossary
+
+    if not entries:
+        return text, {}, 0
+
+    ordered_terms = sorted(entries.keys(), key=lambda term: (-len(term), term))
+    protected = text
+    token_map: dict[str, str] = {}
+    replacements = 0
+
+    for idx, source in enumerate(ordered_terms):
+        token = f"__LT_GLOSSARY_TERM_{idx:04d}__"
+        target = entries[source]
+        pattern = _term_pattern(source, ignore_case=True)
+
+        def _replace(match: re.Match[str]) -> str:
+            nonlocal replacements
+            token_map[token] = _case_aware_target(match.group(0), target)
+            replacements += 1
+            return token
+
+        protected = pattern.sub(_replace, protected)
+    return protected, token_map, replacements
+
+
+def restore_glossary_terms_with_stats(text: str, token_map: dict[str, str]) -> tuple[str, int]:
+    if not token_map:
+        return text, 0
+
+    restored = text
+    replacements = 0
+    for token, target in token_map.items():
+        if token in restored:
+            replacements += restored.count(token)
+            restored = restored.replace(token, target)
+    return restored, replacements
