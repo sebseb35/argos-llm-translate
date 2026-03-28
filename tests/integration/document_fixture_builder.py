@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from docx import Document
@@ -61,6 +62,7 @@ def create_xlsx_fixture(path: Path) -> None:
     workbook = Workbook()
     overview = workbook.active
     overview.title = "Overview"
+
     overview["A1"] = "Metric"
     overview["B1"] = "Value"
     overview["A2"] = "Revenue"
@@ -68,7 +70,20 @@ def create_xlsx_fixture(path: Path) -> None:
     overview["A3"] = "Comment"
     overview["B3"] = "Forecast remains conservative"
     overview["A4"] = "Total"
-    overview["B4"] = "=B2*1.1"
+    overview["B4"] = "=SUM(B2:B3)"
+
+    overview["A6"] = "ID"
+    overview["B6"] = "00123"
+    overview["A7"] = "Launch Date"
+    overview["B7"] = date(2025, 1, 31)
+    overview["A8"] = "Approved"
+    overview["B8"] = True
+    overview["A9"] = "Whitespace"
+    overview["B9"] = "  keep spacing  "
+    overview["A10"] = "Empty String"
+    overview["B10"] = ""
+    overview["A11"] = "Missing"
+    overview["B11"] = None
 
     risks = workbook.create_sheet("Risks")
     risks["A1"] = "Risk"
@@ -77,6 +92,10 @@ def create_xlsx_fixture(path: Path) -> None:
     risks["B2"] = "Ops"
     risks["A3"] = "Escalation needed"
     risks["B3"] = "Program Manager"
+
+    # Sparse text cell to validate coordinate preservation in sparse sheets.
+    risks["D5"] = "Mitigation notes"
+
     workbook.save(path)
 
 
