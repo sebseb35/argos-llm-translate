@@ -46,7 +46,13 @@ class TranslationPipeline:
 
                 with_glossary = apply_glossary(raw, self.glossary)
                 if self.config.engine_mode in {EngineMode.HYBRID, EngineMode.LLM}:
-                    final = post_edit_segment(self.llm, segment, with_glossary, self.glossary)
+                    final = post_edit_segment(
+                        self.llm,
+                        segment,
+                        with_glossary,
+                        self.glossary,
+                        self.config.llm,
+                    )
                 else:
                     final = with_glossary
                 outputs.append(final)

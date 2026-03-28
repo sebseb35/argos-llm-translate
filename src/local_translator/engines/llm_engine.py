@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import re
-
 
 class LLMEngine:
     """Constrained local post-editor using llama-cpp-python if configured."""
 
-    def __init__(self, model_path: str | None, temperature: float = 0.1, max_tokens: int = 256):
+    def __init__(self, model_path: str | None, temperature: float = 0.0, max_tokens: int = 256):
         self.model_path = model_path
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -31,16 +29,25 @@ class LLMEngine:
         llm = self._load_model()
         glossary_lines = "\n".join(f"- {k} => {v}" for k, v in (glossary or {}).items())
         prompt = (
-            "You are a strict post-editor. Keep meaning identical. Do not add/remove facts. "
-            "Preserve numbers, identifiers, paths, URLs, commands, code. Return only edited text.\n"
-            f"Source:\n{source}\n\nDraft translation:\n{translated}\n\nGlossary:\n{glossary_lines}\n"
+            "System: You are a deterministic translation post-editor.\n"
+            "Rules:\n"
+            "1) Keep meaning and scope identical to the draft.\n"
+            "2) Do NOT add or remove information.\n"
+            "3) Keep protected placeholders/tokens unchanged.\n"
+            "4) Keep numbers, URLs, code, commands, identifiers unchanged.\n"
+            "5) Output only the edited segment text, no commentary.\n\n"
+            f"[SOURCE]\n{source}\n[/SOURCE]\n\n"
+            f"[DRAFT_TRANSLATION]\n{translated}\n[/DRAFT_TRANSLATION]\n\n"
+            f"[GLOSSARY]\n{glossary_lines}\n[/GLOSSARY]\n\n"
+            "[OUTPUT]\n"
         )
-        out = llm(prompt, temperature=self.temperature, max_tokens=self.max_tokens)
-        candidate = out["choices"][0]["text"].strip()
-        if not candidate:
-            return translated
-
-        # Basic guardrail: if too divergent in number tokens, fallback.
-        if len(re.findall(r"\d+", candidate)) != len(re.findall(r"\d+", translated)):
-            return translated
-        return candidate
+        out = llm(
+            prompt,
+            temperature=min(self.temperature, 0.1),
+            top_k=1,
+            top_p=1.0,
+            seed=0,
+            max_tokens=self.max_tokens,
+            stop=["[/OUTPUT]"],
+        )
+        return out["choices"][0]["text"].strip()
