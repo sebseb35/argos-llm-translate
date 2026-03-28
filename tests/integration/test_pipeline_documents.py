@@ -145,15 +145,35 @@ def test_pptx_pipeline_with_fixture(tmp_path, monkeypatch):
 
     assert output_path.exists()
     translated_presentation = Presentation(str(output_path))
-    assert len(translated_presentation.slides) == 1
+    assert len(translated_presentation.slides) == 2
 
-    texts = []
-    for shape in translated_presentation.slides[0].shapes:
-        if hasattr(shape, "text"):
-            texts.append(shape.text)
+    first_slide = translated_presentation.slides[0]
+    second_slide = translated_presentation.slides[1]
 
-    assert any("Roadmap Update" in text for text in texts)
-    assert any(TRANSLATED_TAG in text for text in texts)
+    assert first_slide.shapes.title.text == f"Roadmap Update{TRANSLATED_TAG}"
+
+    body_lines = [paragraph.text for paragraph in first_slide.placeholders[1].text_frame.paragraphs]
+    assert body_lines == [
+        f"Q2 priorities:{TRANSLATED_TAG}",
+        f"Improve latency{TRANSLATED_TAG}",
+        f"Finalize compliance checklist{TRANSLATED_TAG}",
+    ]
+
+    owner_notes_shape = next(
+        shape
+        for shape in first_slide.shapes
+        if shape.has_text_frame and shape.text_frame.paragraphs[0].text == f"Owner notes{TRANSLATED_TAG}"
+    )
+    assert owner_notes_shape.text_frame.paragraphs[1].text == f"Keep rollout deterministic{TRANSLATED_TAG}"
+
+    table_shape = next(shape for shape in first_slide.shapes if shape.has_table)
+    table = table_shape.table
+    assert table.cell(0, 0).text == f"Region{TRANSLATED_TAG}"
+    assert table.cell(0, 1).text == f"Status{TRANSLATED_TAG}"
+    assert table.cell(1, 0).text == f"US-East{TRANSLATED_TAG}"
+    assert table.cell(1, 1).text == ""
+
+    assert second_slide.shapes.title.text == f"No body text slide{TRANSLATED_TAG}"
 
 
 def test_xlsx_pipeline_preserves_structure_and_non_text_cells(tmp_path, monkeypatch):

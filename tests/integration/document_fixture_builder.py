@@ -8,6 +8,7 @@ from openpyxl import Workbook
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from pptx import Presentation
+from pptx.util import Inches
 
 
 FIXTURE_TEXT = {
@@ -54,7 +55,25 @@ def create_pptx_fixture(path: Path) -> None:
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[1])
     slide.shapes.title.text = "Roadmap Update"
-    slide.placeholders[1].text = "Q2 priorities:\n- Improve latency\n- Finalize compliance checklist"
+
+    body = slide.placeholders[1].text_frame
+    body.paragraphs[0].text = "Q2 priorities:"
+    body.add_paragraph().text = "Improve latency"
+    body.add_paragraph().text = "Finalize compliance checklist"
+
+    notes_box = slide.shapes.add_textbox(Inches(0.8), Inches(4.8), Inches(5.5), Inches(1.2))
+    notes_box.text_frame.paragraphs[0].text = "Owner notes"
+    notes_box.text_frame.add_paragraph().text = "Keep rollout deterministic"
+
+    table_shape = slide.shapes.add_table(rows=2, cols=2, left=Inches(6.0), top=Inches(1.6), width=Inches(3.0), height=Inches(1.6))
+    table = table_shape.table
+    table.cell(0, 0).text = "Region"
+    table.cell(0, 1).text = "Status"
+    table.cell(1, 0).text = "US-East"
+    table.cell(1, 1).text = ""
+
+    second_slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    second_slide.shapes.title.text = "No body text slide"
     presentation.save(path)
 
 
