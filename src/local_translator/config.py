@@ -14,8 +14,11 @@ class LLMSettings:
     enabled: bool = False
     model_path: Path | None = None
     n_ctx: int = 2048
-    temperature: float = 0.1
+    temperature: float = 0.0
     max_tokens: int = 256
+    strict_validation: bool = True
+    fallback_to_argos: bool = True
+    max_expansion_ratio: float = 1.4
 
 
 @dataclass(slots=True)
