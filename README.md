@@ -95,6 +95,52 @@ local-translator text --from fr --to en --engine argos --content "Bonjour" --rep
 local-translator gui
 ```
 
+## Python API (stable entry points)
+
+The internal translation API is exposed for GUI and automation use via:
+
+- `local_translator.translate_text(...)`
+- `local_translator.translate_file(...)`
+- `local_translator.preview_file(...)`
+
+These functions validate inputs, execute translation, and return structured dataclass outputs (translated text/path, report metrics, warnings). The CLI is intentionally a thin wrapper over these API functions.
+
+Example (text):
+
+```python
+from local_translator import translate_text
+
+result = translate_text(
+    "Bonjour le monde",
+    source_lang="fr",
+    target_lang="en",
+    engine="argos",
+    report=True,
+)
+
+print(result.translated_text)
+print(result.report.segment_count)
+```
+
+Example (file):
+
+```python
+from pathlib import Path
+from local_translator import translate_file
+
+result = translate_file(
+    input_path=Path("input.docx"),
+    output_path=Path("output.docx"),
+    source_lang="fr",
+    target_lang="en",
+    engine="argos",
+    report=True,
+)
+
+print(result.output_path)
+print(result.report.fallback_count)
+```
+
 ## Execution reporting
 
 Use `--report` on `text` and `translate` commands to print a structured execution summary:

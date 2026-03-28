@@ -30,7 +30,7 @@ class FakePipeline:
 
 
 def test_text_report_printed_with_flag(monkeypatch):
-    monkeypatch.setattr("local_translator.cli.TranslationPipeline", FakePipeline)
+    monkeypatch.setattr("local_translator.api.TranslationPipeline", FakePipeline)
     result = runner.invoke(
         app,
         [
@@ -54,7 +54,7 @@ def test_text_report_printed_with_flag(monkeypatch):
 
 
 def test_text_report_json_export(tmp_path, monkeypatch):
-    monkeypatch.setattr("local_translator.cli.TranslationPipeline", FakePipeline)
+    monkeypatch.setattr("local_translator.api.TranslationPipeline", FakePipeline)
     report_path = tmp_path / "report.json"
 
     result = runner.invoke(
