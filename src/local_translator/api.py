@@ -137,6 +137,9 @@ def _build_runtime_config(
     glossary: Path | None,
     llm_model: Path | None,
     report: bool,
+    llm_n_ctx: int,
+    llm_n_batch: int,
+    llm_n_threads: int | None,
 ) -> RuntimeConfig:
     source_lang, target_lang, engine, glossary = _validate_common_options(
         source_lang,
@@ -145,7 +148,20 @@ def _build_runtime_config(
         glossary,
         llm_model,
     )
-    llm_cfg = LLMSettings(enabled=engine in {"hybrid", "llm"}, model_path=llm_model)
+    if llm_n_ctx <= 0:
+        raise APIValidationError("llm_n_ctx must be > 0.")
+    if llm_n_batch <= 0:
+        raise APIValidationError("llm_n_batch must be > 0.")
+    if llm_n_threads is not None and llm_n_threads <= 0:
+        raise APIValidationError("llm_n_threads must be > 0 when provided.")
+
+    llm_cfg = LLMSettings(
+        enabled=engine in {"hybrid", "llm"},
+        model_path=llm_model,
+        n_ctx=llm_n_ctx,
+        n_batch=llm_n_batch,
+        n_threads=llm_n_threads,
+    )
     return RuntimeConfig(
         source_lang=source_lang,
         target_lang=target_lang,
@@ -164,6 +180,9 @@ def translate_text(
     engine: str = "argos",
     glossary: Path | None = None,
     llm_model: Path | None = None,
+    llm_n_ctx: int = 1024,
+    llm_n_batch: int = 64,
+    llm_n_threads: int | None = 2,
     report: bool = False,
     report_json: Path | None = None,
 ) -> TextTranslationOutput:
@@ -174,7 +193,17 @@ def translate_text(
     if report_json and not report:
         warnings.append("report_json was provided without report=True; JSON export skipped.")
 
-    cfg = _build_runtime_config(source_lang, target_lang, engine, glossary, llm_model, report)
+    cfg = _build_runtime_config(
+        source_lang,
+        target_lang,
+        engine,
+        glossary,
+        llm_model,
+        report,
+        llm_n_ctx,
+        llm_n_batch,
+        llm_n_threads,
+    )
     pipeline = TranslationPipeline(cfg)
     result = pipeline.translate_text(content)
 
@@ -193,6 +222,9 @@ def translate_file(
     engine: str = "argos",
     glossary: Path | None = None,
     llm_model: Path | None = None,
+    llm_n_ctx: int = 1024,
+    llm_n_batch: int = 64,
+    llm_n_threads: int | None = 2,
     report: bool = False,
     report_json: Path | None = None,
 ) -> FileTranslationOutput:
@@ -201,7 +233,17 @@ def translate_file(
     if report_json and not report:
         warnings.append("report_json was provided without report=True; JSON export skipped.")
 
-    cfg = _build_runtime_config(source_lang, target_lang, engine, glossary, llm_model, report)
+    cfg = _build_runtime_config(
+        source_lang,
+        target_lang,
+        engine,
+        glossary,
+        llm_model,
+        report,
+        llm_n_ctx,
+        llm_n_batch,
+        llm_n_threads,
+    )
     pipeline = TranslationPipeline(cfg)
     extractor = get_extractor(input_path)
     extracted = extractor.extract(input_path)

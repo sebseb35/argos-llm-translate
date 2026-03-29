@@ -171,3 +171,16 @@ def test_post_edit_accepts_normalized_placeholder_variants():
     )
     assert "https://example.com" in result
     assert "production deployment" in result
+
+
+def test_post_edit_accepts_literal_token_instead_of_placeholder():
+    draft = "The acceptance testing of work package 2 starts after validation."
+    candidate = "The __LT_GLOSSARY_PROTECTED_0000__ of __LT_GLOSSARY_PROTECTED_0001__ 2 starts after validation."
+    result = post_edit_segment(
+        llm_engine=FakeLLM(response=candidate),
+        source_segment="source",
+        translated_segment=draft,
+        glossary={"recette": "acceptance testing", "lot": "work package"},
+        llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
+    )
+    assert result == draft

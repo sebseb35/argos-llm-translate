@@ -169,6 +169,27 @@ def _canonicalize_candidate_placeholders(candidate_protected: str, token_map: di
     return canonical
 
 
+def _reinject_missing_placeholders(candidate_protected: str, token_map: dict[str, str]) -> str:
+    """Reinsert expected placeholders when the LLM echoed the exact token literal.
+
+    This keeps strict validation while tolerating a common behavior where the model
+    outputs literal protected content (e.g. "2") instead of "__LT_PROTECTED_0000__".
+    """
+    restored = candidate_protected
+    expected = set(_PLACEHOLDER_RE.findall(" ".join(token_map.keys()))) | set(
+        _GLOSSARY_PLACEHOLDER_RE.findall(" ".join(token_map.keys()))
+    )
+    if not expected:
+        return restored
+
+    for placeholder, token in sorted(token_map.items(), key=lambda item: (-len(item[1]), item[0])):
+        if placeholder in restored or not token:
+            continue
+        if token in restored:
+            restored = restored.replace(token, placeholder, 1)
+    return restored
+
+
 def _log_placeholder_diff(candidate_protected: str, token_map: dict[str, str]) -> None:
     expected_protected = _placeholder_ids(" ".join(token_map.keys()), _PLACEHOLDER_RE)
     actual_protected = _placeholder_ids(candidate_protected, _PLACEHOLDER_RE)
@@ -224,11 +245,18 @@ def post_edit_segment_with_metrics(
     llm_elapsed = time.perf_counter() - llm_started
     combined_token_map = {**translated_protected.token_map, **glossary_protected.token_map}
     canonical_candidate = _canonicalize_candidate_placeholders(candidate_protected, combined_token_map)
+    reinjected_candidate = _reinject_missing_placeholders(canonical_candidate, combined_token_map)
     if canonical_candidate != candidate_protected:
         LOGGER.debug(
             "Canonicalized placeholders before validation | raw=%r canonical=%r",
             candidate_protected[:300],
             canonical_candidate[:300],
+        )
+    if reinjected_candidate != canonical_candidate:
+        LOGGER.debug(
+            "Reinjected literal tokens as placeholders before validation | canonical=%r reinjected=%r",
+            canonical_candidate[:300],
+            reinjected_candidate[:300],
         )
 
     validation_started = time.perf_counter()
@@ -237,7 +265,7 @@ def post_edit_segment_with_metrics(
         validation = validator.validate_protected_output(
             source_protected=source_protected.text,
             translated_protected=glossary_protected.text,
-            candidate_protected=canonical_candidate,
+            candidate_protected=reinjected_candidate,
             token_map=combined_token_map,
             max_expansion_ratio=llm_settings.max_expansion_ratio,
         )
@@ -245,16 +273,16 @@ def post_edit_segment_with_metrics(
             LOGGER.warning("LLM post-edit rejected (%s).", validation.reason)
             if validation.reason in {"placeholder_mismatch", "glossary_placeholder_mismatch"}:
                 _log_placeholder_diff(
-                    canonical_candidate,
+                    reinjected_candidate,
                     combined_token_map,
                 )
             if llm_settings.fallback_to_argos:
                 return PostEditOutcome(text=translated_segment, fallback_used=True)
-            return PostEditOutcome(text=canonical_candidate)
+            return PostEditOutcome(text=reinjected_candidate)
         validation_elapsed = time.perf_counter() - validation_started
 
     restore_started = time.perf_counter()
-    restored = protector.restore(canonical_candidate, translated_protected.token_map)
+    restored = protector.restore(reinjected_candidate, translated_protected.token_map)
     restored = glossary_protector.restore(restored, glossary_protected.token_map)
     if _PLACEHOLDER_RE.search(restored) or _GLOSSARY_PLACEHOLDER_RE.search(restored):
         LOGGER.warning("LLM output still contains unresolved placeholders; using Argos output.")

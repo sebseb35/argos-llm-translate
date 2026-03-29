@@ -62,6 +62,21 @@ def translate(
         "--llm-model",
         help="Path to local GGUF model (required for --engine llm/hybrid).",
     ),
+    llm_n_ctx: int = typer.Option(
+        1024,
+        "--llm-n-ctx",
+        help="LLM context window size. Lower values reduce memory usage.",
+    ),
+    llm_n_batch: int = typer.Option(
+        64,
+        "--llm-n-batch",
+        help="LLM batch size. Lower values reduce memory pressure.",
+    ),
+    llm_n_threads: int = typer.Option(
+        2,
+        "--llm-n-threads",
+        help="LLM CPU threads. Lower values reduce CPU contention and memory pressure.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
     report: bool = typer.Option(False, "--report", help="Print execution report summary."),
     report_json: Path | None = typer.Option(
@@ -80,6 +95,9 @@ def translate(
             engine=engine,
             glossary=glossary,
             llm_model=llm_model,
+            llm_n_ctx=llm_n_ctx,
+            llm_n_batch=llm_n_batch,
+            llm_n_threads=llm_n_threads,
             report=report,
             report_json=report_json,
         )
@@ -111,6 +129,21 @@ def text(
         "--llm-model",
         help="Path to local GGUF model (required for --engine llm/hybrid).",
     ),
+    llm_n_ctx: int = typer.Option(
+        1024,
+        "--llm-n-ctx",
+        help="LLM context window size. Lower values reduce memory usage.",
+    ),
+    llm_n_batch: int = typer.Option(
+        64,
+        "--llm-n-batch",
+        help="LLM batch size. Lower values reduce memory pressure.",
+    ),
+    llm_n_threads: int = typer.Option(
+        2,
+        "--llm-n-threads",
+        help="LLM CPU threads. Lower values reduce CPU contention and memory pressure.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
     report: bool = typer.Option(False, "--report", help="Print execution report summary."),
     report_json: Path | None = typer.Option(
@@ -128,6 +161,9 @@ def text(
             engine=engine,
             glossary=glossary,
             llm_model=llm_model,
+            llm_n_ctx=llm_n_ctx,
+            llm_n_batch=llm_n_batch,
+            llm_n_threads=llm_n_threads,
             report=report,
             report_json=report_json,
         )
