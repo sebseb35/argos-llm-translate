@@ -32,6 +32,18 @@ class LLMDecision:
     reason: str = ""
 
 
+@dataclass(slots=True)
+class LLMChunk:
+    segment_indices: list[int]
+    source_text: str
+    draft_text: str
+    char_count: int
+    placeholder_density: float
+    mode: PostEditMode | None
+    merge_reason: str
+    boundary_reason: str | None = None
+
+
 def extract_segment_features(segment: str, translated_segment: str, glossary: dict[str, str]) -> SegmentFeatures:
     char_count = len(translated_segment)
     placeholder_count = len(_PLACEHOLDER_RE.findall(translated_segment))
@@ -60,33 +72,30 @@ def decide_llm_postedit(
     features = extract_segment_features(segment, translated_segment, glossary)
 
     if features.char_count < llm_settings.skip_short_characters:
-        return LLMDecision(use_llm=False, reason="short_segment")
+        return LLMDecision(use_llm=False, reason="short_plain_segment")
 
     if features.placeholder_ratio > llm_settings.skip_high_placeholder_ratio:
-        return LLMDecision(use_llm=False, reason="placeholder_dense")
+        return LLMDecision(use_llm=False, reason="high_placeholder_density")
 
     if mode in {"safe", "smart"}:
         return LLMDecision(use_llm=True, mode=mode, reason="forced_mode")
 
-    if features.technical_token_count > 0 or features.placeholder_count >= 2:
-        return LLMDecision(use_llm=True, mode="safe", reason="technical_or_placeholder")
+    if features.technical_token_count >= llm_settings.routing_technical_token_threshold:
+        return LLMDecision(use_llm=True, mode="safe", reason="technical_token_density")
 
-    if features.char_count >= llm_settings.smart_min_chars or features.sentence_count > 1:
-        return LLMDecision(use_llm=True, mode="smart", reason="long_or_multisentence")
+    if features.placeholder_count >= llm_settings.routing_safe_placeholder_count:
+        return LLMDecision(use_llm=True, mode="safe", reason="high_placeholder_density")
+
+    if features.sentence_count >= llm_settings.routing_multi_sentence_threshold:
+        return LLMDecision(use_llm=True, mode="smart", reason="multi_sentence_prose")
+
+    if features.char_count >= llm_settings.smart_min_chars:
+        return LLMDecision(use_llm=True, mode="smart", reason="long_natural_language_segment")
 
     return LLMDecision(use_llm=True, mode="safe", reason="default_safe")
 
 
-@dataclass(slots=True)
-class LLMChunk:
-    segment_indices: list[int]
-    source_text: str
-    draft_text: str
-    char_count: int
-    placeholder_density: float
-
-
-def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]]) -> list[LLMChunk]:
+def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]], llm_settings: LLMSettings) -> list[LLMChunk]:
     """Build deterministic, conservative contiguous chunks for LLM post-editing."""
     chunks: list[LLMChunk] = []
     current_indices: list[int] = []
@@ -94,13 +103,13 @@ def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]]) -> 
     current_draft: list[str] = []
     current_char_count = 0
     current_placeholder_count = 0
-    max_segments = 4
-    max_chars = 560
+    boundary_reason: str | None = None
 
     def flush() -> None:
-        nonlocal current_indices, current_source, current_draft, current_char_count, current_placeholder_count
+        nonlocal current_indices, current_source, current_draft, current_char_count, current_placeholder_count, boundary_reason
         if not current_indices:
             return
+        first_mode = metadata[current_indices[0]].get("mode") if current_indices else None
         chunks.append(
             LLMChunk(
                 segment_indices=current_indices.copy(),
@@ -108,6 +117,9 @@ def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]]) -> 
                 draft_text="\n\n".join(current_draft),
                 char_count=current_char_count,
                 placeholder_density=current_placeholder_count / max(1, current_char_count),
+                mode=first_mode if isinstance(first_mode, str) else None,
+                merge_reason="merged_consecutive_prose_segments",
+                boundary_reason=boundary_reason,
             )
         )
         current_indices = []
@@ -115,11 +127,13 @@ def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]]) -> 
         current_draft = []
         current_char_count = 0
         current_placeholder_count = 0
+        boundary_reason = None
 
     for idx, _segment in enumerate(segments):
         item = metadata[idx]
         should_merge = bool(item.get("can_chunk", False))
         if not should_merge:
+            boundary_reason = "stopped_due_to_mode_change"
             flush()
             continue
 
@@ -130,10 +144,15 @@ def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]]) -> 
         if (
             current_indices
             and (
-                len(current_indices) >= max_segments
-                or (current_char_count + seg_char_count) > max_chars
+                len(current_indices) >= llm_settings.chunk_max_segments
+                or (current_char_count + seg_char_count) > llm_settings.chunk_max_chars
             )
         ):
+            boundary_reason = (
+                "stopped_due_to_max_segments"
+                if len(current_indices) >= llm_settings.chunk_max_segments
+                else "stopped_due_to_max_chars"
+            )
             flush()
         current_indices.append(idx)
         current_source.append(seg_source)

@@ -85,3 +85,50 @@ def test_text_report_json_export(tmp_path, monkeypatch):
     assert "glossary_replacements" in payload
     assert "llm_calls" in payload
     assert "llm_skipped" in payload
+    assert "validation_failures" in payload
+    assert "routing_trace" in payload
+
+
+def test_report_summary_command(tmp_path):
+    report_a = tmp_path / "a.json"
+    report_b = tmp_path / "b.json"
+    report_a.write_text(
+        json.dumps(
+            {
+                "segment_count": 10,
+                "llm_skipped": 7,
+                "llm_safe_segments": 2,
+                "llm_smart_segments": 1,
+                "llm_chunks_built": 1,
+                "avg_chunk_size": 3.0,
+                "chunk_fallbacks": 0,
+                "segment_fallbacks": 1,
+                "llm_calls_saved_by_chunking": 2,
+                "validation_failures": {"placeholder_mismatch": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    report_b.write_text(
+        json.dumps(
+            {
+                "segment_count": 10,
+                "llm_skipped": 6,
+                "llm_safe_segments": 3,
+                "llm_smart_segments": 1,
+                "llm_chunks_built": 2,
+                "avg_chunk_size": 2.0,
+                "chunk_fallbacks": 1,
+                "segment_fallbacks": 1,
+                "llm_calls_saved_by_chunking": 1,
+                "validation_failures": {"placeholder_mismatch": 2},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["report-summary", str(report_a), str(report_b)])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["segments"] == 20
+    assert payload["llm_calls_saved_by_chunking"] == 3
+    assert payload["validation_failures"]["placeholder_mismatch"] == 3

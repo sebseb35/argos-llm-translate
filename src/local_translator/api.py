@@ -42,6 +42,24 @@ class PreviewOutput:
 
 
 def _merge_reports(reports: list[TranslationReport]) -> TranslationReport:
+    segment_latency_total = sum(item.avg_llm_latency_per_segment * max(1, item.llm_calls) for item in reports)
+    chunk_latency_total = sum(item.avg_llm_latency_per_chunk * max(1, item.llm_chunks_built) for item in reports)
+    llm_calls_total = sum(item.llm_calls for item in reports)
+    chunk_total = sum(item.llm_chunks_built for item in reports)
+    validation_failures: dict[str, int] = {}
+    routing_reasons: dict[str, int] = {}
+    chunk_boundary_reasons: dict[str, int] = {}
+    chunk_merge_reasons: dict[str, int] = {}
+    for item in reports:
+        for key, value in item.validation_failures.items():
+            validation_failures[key] = validation_failures.get(key, 0) + value
+        for key, value in item.routing_reasons.items():
+            routing_reasons[key] = routing_reasons.get(key, 0) + value
+        for key, value in item.chunk_boundary_reasons.items():
+            chunk_boundary_reasons[key] = chunk_boundary_reasons.get(key, 0) + value
+        for key, value in item.chunk_merge_reasons.items():
+            chunk_merge_reasons[key] = chunk_merge_reasons.get(key, 0) + value
+
     return TranslationReport(
         segment_count=sum(item.segment_count for item in reports),
         translated_count=sum(item.translated_count for item in reports),
@@ -49,7 +67,27 @@ def _merge_reports(reports: list[TranslationReport]) -> TranslationReport:
         elapsed_seconds=sum(item.elapsed_seconds for item in reports),
         fallback_count=sum(item.fallback_count for item in reports),
         glossary_replacements=sum(item.glossary_replacements for item in reports),
+        llm_calls=llm_calls_total,
+        llm_skipped=sum(item.llm_skipped for item in reports),
         errors=[error for item in reports for error in item.errors],
+        llm_safe_segments=sum(item.llm_safe_segments for item in reports),
+        llm_smart_segments=sum(item.llm_smart_segments for item in reports),
+        llm_chunks_built=chunk_total,
+        chunk_fallbacks=sum(item.chunk_fallbacks for item in reports),
+        segment_fallbacks=sum(item.segment_fallbacks for item in reports),
+        avg_chunk_size=(sum(item.avg_chunk_size * item.llm_chunks_built for item in reports) / chunk_total) if chunk_total else 0.0,
+        max_chunk_size=max([item.max_chunk_size for item in reports], default=0),
+        avg_llm_latency_per_segment=(segment_latency_total / llm_calls_total) if llm_calls_total else 0.0,
+        avg_llm_latency_per_chunk=(chunk_latency_total / chunk_total) if chunk_total else 0.0,
+        llm_calls_saved_by_chunking=sum(item.llm_calls_saved_by_chunking for item in reports),
+        validation_failures=validation_failures,
+        placeholder_mismatch_count=sum(item.placeholder_mismatch_count for item in reports),
+        glossary_placeholder_mismatch_count=sum(item.glossary_placeholder_mismatch_count for item in reports),
+        routing_reasons=routing_reasons,
+        chunk_boundary_reasons=chunk_boundary_reasons,
+        chunk_merge_reasons=chunk_merge_reasons,
+        routing_trace=[trace for item in reports for trace in item.routing_trace],
+        chunk_trace=[trace for item in reports for trace in item.chunk_trace],
     )
 
 
