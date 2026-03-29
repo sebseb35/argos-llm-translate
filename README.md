@@ -153,6 +153,36 @@ Use `--report` on `text` and `translate` commands to print a structured executio
 
 Use `--report-json <path>` together with `--report` to export the same metrics as JSON for auditing.
 
+Hybrid reports now include routing/chunk tuning metrics:
+
+- skip/safe/smart segment counts,
+- routing reasons per segment (for example `short_plain_segment`, `technical_token_density`, `multi_sentence_prose`),
+- chunk planning traces (`segment_indices`, merge/boundary reasons, placeholder/char counts),
+- validation failure counters (including placeholder mismatch counters),
+- average LLM latency per segment/chunk and estimated calls saved by chunking.
+
+You can summarize multiple JSON reports with:
+
+```bash
+local-translator report-summary run-a.json run-b.json run-c.json
+```
+
+This gives a lightweight feedback loop for threshold tuning on long documents.
+
+### Heuristic tuning knobs (centralized in `LLMSettings`)
+
+Initial conservative defaults:
+
+- `skip_short_characters=48`
+- `skip_high_placeholder_ratio=0.12`
+- `routing_technical_token_threshold=1`
+- `routing_safe_placeholder_count=2`
+- `routing_multi_sentence_threshold=2`
+- `smart_min_chars=160`
+- `chunk_max_placeholders_per_segment=1`
+- `chunk_max_segments=4`
+- `chunk_max_chars=560`
+
 ## V1 supported formats
 
 - `.txt`: full support

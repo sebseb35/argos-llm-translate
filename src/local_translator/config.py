@@ -28,6 +28,13 @@ class LLMSettings:
     skip_high_placeholder_ratio: float = 0.12
     smart_min_chars: int = 160
     enable_chunking: bool = False
+    routing_technical_token_threshold: int = 1
+    routing_safe_placeholder_count: int = 2
+    routing_multi_sentence_threshold: int = 2
+    chunk_max_placeholders_per_segment: int = 1
+    chunk_max_segments: int = 4
+    chunk_max_chars: int = 560
+    chunk_min_chars_for_merge: int = 1
 
 
 @dataclass(slots=True)

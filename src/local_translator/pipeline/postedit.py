@@ -57,6 +57,7 @@ class PostEditOutcome:
     fallback_used: bool = False
     glossary_replacements: int = 0
     failure_reason: str | None = None
+    llm_latency_seconds: float = 0.0
 
 
 class TokenProtector:
@@ -367,7 +368,12 @@ def post_edit_segment_with_metrics(
         )
     except Exception:
         LOGGER.warning("LLM post-edit failed; falling back to Argos output.", exc_info=True)
-        return PostEditOutcome(text=translated_segment, fallback_used=True, failure_reason="llm_exception")
+        return PostEditOutcome(
+            text=translated_segment,
+            fallback_used=True,
+            failure_reason="llm_exception",
+            llm_latency_seconds=time.perf_counter() - llm_started,
+        )
     llm_elapsed = time.perf_counter() - llm_started
     validate_started = time.perf_counter()
     outcome = apply_postedit_candidate(
@@ -385,6 +391,7 @@ def post_edit_segment_with_metrics(
         outcome.fallback_used,
         outcome.failure_reason,
     )
+    outcome.llm_latency_seconds = llm_elapsed
     return outcome
 
 

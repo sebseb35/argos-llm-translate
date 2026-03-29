@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -15,7 +16,7 @@ from local_translator.api import (
 )
 from local_translator.gui.stub import run_gui_stub
 from local_translator.logging_utils import setup_logging
-from local_translator.reporting import format_report
+from local_translator.reporting import format_report, summarize_reports
 
 LANG_HELP = (
     "Language code. Supported values: "
@@ -194,6 +195,18 @@ def preview(
 @app.command(help="Open the GUI placeholder (stub).")
 def gui():
     run_gui_stub()
+
+
+@app.command("report-summary", help="Summarize one or more JSON execution reports.")
+def report_summary(
+    report_paths: list[Path] = typer.Argument(..., help="One or more report JSON files."),
+):
+    payloads = []
+    for report_path in report_paths:
+        raw = report_path.read_text(encoding="utf-8")
+        payloads.append(json.loads(raw))
+    summary = summarize_reports(payloads)
+    typer.echo(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
