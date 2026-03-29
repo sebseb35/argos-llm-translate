@@ -1,6 +1,11 @@
 from local_translator.config import LLMSettings, RuntimeConfig
 from local_translator.models.types import EngineMode
-from local_translator.pipeline.postedit import TokenProtector, post_edit_segment
+from local_translator.pipeline.postedit import (
+    TokenProtector,
+    format_chunk_payload,
+    parse_chunk_output,
+    post_edit_segment,
+)
 from local_translator.pipeline.translator import TranslationPipeline
 
 
@@ -203,3 +208,22 @@ def test_post_edit_reinjects_glossary_placeholder_with_whitespace_variation():
         llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
     )
     assert result == draft
+
+
+def test_chunk_payload_round_trip_parsing():
+    source_payload, draft_payload = format_chunk_payload(
+        [0, 1, 2],
+        ["s0", "s1", "s2"],
+        ["d0", "d1", "d2"],
+    )
+    assert "[SEGMENT_0]" in source_payload
+    parsed, reason = parse_chunk_output(draft_payload, 3)
+    assert reason is None
+    assert parsed == ["d0", "d1", "d2"]
+
+
+def test_chunk_output_parsing_detects_missing_segments():
+    malformed = "[SEGMENT_0]\nA\n[/SEGMENT_0]"
+    parsed, reason = parse_chunk_output(malformed, 2)
+    assert parsed is None
+    assert reason == "missing_segment"

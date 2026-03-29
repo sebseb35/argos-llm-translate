@@ -16,5 +16,11 @@ def test_decide_llm_selects_smart_for_long_multisentence_text():
 
 
 def test_build_llm_chunks_groups_contiguous_segments():
-    chunks = build_llm_chunks(["a" * 30, "b" * 30, "c" * 80], target_chars=60, max_chars=100)
-    assert [(c.start_index, c.end_index) for c in chunks] == [(0, 1), (2, 2)]
+    segments = ["a" * 30, "b" * 30, "c" * 80]
+    metadata = [
+        {"source": "s1", "draft": segments[0], "can_chunk": True, "placeholder_count": 0},
+        {"source": "s2", "draft": segments[1], "can_chunk": True, "placeholder_count": 0},
+        {"source": "s3", "draft": segments[2], "can_chunk": True, "placeholder_count": 0},
+    ]
+    chunks = build_llm_chunks(segments, metadata)
+    assert [c.segment_indices for c in chunks] == [[0, 1, 2]]

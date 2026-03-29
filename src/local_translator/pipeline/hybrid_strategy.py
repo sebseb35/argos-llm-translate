@@ -79,44 +79,67 @@ def decide_llm_postedit(
 
 @dataclass(slots=True)
 class LLMChunk:
-    start_index: int
-    end_index: int
     segment_indices: list[int]
+    source_text: str
+    draft_text: str
+    char_count: int
+    placeholder_density: float
 
 
-def build_llm_chunks(segments: list[str], target_chars: int, max_chars: int) -> list[LLMChunk]:
-    """Build conservative contiguous chunks for future chunk-level post-editing.
-
-    This planner is intentionally side-effect free and can be adopted incrementally.
-    """
+def build_llm_chunks(segments: list[str], metadata: list[dict[str, object]]) -> list[LLMChunk]:
+    """Build deterministic, conservative contiguous chunks for LLM post-editing."""
     chunks: list[LLMChunk] = []
     current_indices: list[int] = []
-    current_len = 0
+    current_source: list[str] = []
+    current_draft: list[str] = []
+    current_char_count = 0
+    current_placeholder_count = 0
+    max_segments = 4
+    max_chars = 560
 
     def flush() -> None:
-        nonlocal current_indices, current_len
+        nonlocal current_indices, current_source, current_draft, current_char_count, current_placeholder_count
         if not current_indices:
             return
         chunks.append(
             LLMChunk(
-                start_index=current_indices[0],
-                end_index=current_indices[-1],
                 segment_indices=current_indices.copy(),
+                source_text="\n\n".join(current_source),
+                draft_text="\n\n".join(current_draft),
+                char_count=current_char_count,
+                placeholder_density=current_placeholder_count / max(1, current_char_count),
             )
         )
         current_indices = []
-        current_len = 0
+        current_source = []
+        current_draft = []
+        current_char_count = 0
+        current_placeholder_count = 0
 
-    for idx, segment in enumerate(segments):
-        seg_len = len(segment)
-        if current_indices and (current_len + seg_len > max_chars):
+    for idx, _segment in enumerate(segments):
+        item = metadata[idx]
+        should_merge = bool(item.get("can_chunk", False))
+        if not should_merge:
             flush()
+            continue
 
+        seg_source = str(item.get("source", ""))
+        seg_draft = str(item.get("draft", ""))
+        seg_char_count = len(seg_draft)
+        seg_placeholder_count = int(item.get("placeholder_count", 0))
+        if (
+            current_indices
+            and (
+                len(current_indices) >= max_segments
+                or (current_char_count + seg_char_count) > max_chars
+            )
+        ):
+            flush()
         current_indices.append(idx)
-        current_len += seg_len
-
-        if current_len >= target_chars:
-            flush()
+        current_source.append(seg_source)
+        current_draft.append(seg_draft)
+        current_char_count += seg_char_count
+        current_placeholder_count += seg_placeholder_count
 
     flush()
     return chunks
