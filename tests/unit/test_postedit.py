@@ -184,3 +184,16 @@ def test_post_edit_accepts_literal_token_instead_of_placeholder():
         llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
     )
     assert result == draft
+
+
+def test_post_edit_reinjects_glossary_placeholder_with_whitespace_variation():
+    draft = "The acceptance testing of work package 2 starts after validation."
+    candidate = "The acceptance   testing of work   package __LT_PROTECTED_0000__ starts after validation."
+    result = post_edit_segment(
+        llm_engine=FakeLLM(response=candidate),
+        source_segment="source",
+        translated_segment=draft,
+        glossary={"recette": "acceptance testing", "lot": "work package"},
+        llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
+    )
+    assert result == draft

@@ -175,14 +175,19 @@ def _replace_once_outside_placeholders(text: str, needle: str, replacement: str)
     if not needle:
         return text, False
 
+    def _needle_pattern(raw: str) -> re.Pattern[str]:
+        escaped = re.escape(raw)
+        # Accept whitespace normalization drift for multiword literals, e.g.
+        # "acceptance testing" vs "acceptance   testing".
+        escaped = escaped.replace(r"\ ", r"\s+")
+        if re.search(r"\w", raw):
+            return re.compile(rf"(?<!\w){escaped}(?!\w)", flags=re.IGNORECASE)
+        return re.compile(escaped, flags=re.IGNORECASE)
+
     last = 0
     out_parts: list[str] = []
     replaced = False
-    escaped = re.escape(needle)
-    if re.search(r"\w", needle):
-        needle_re = re.compile(rf"(?<!\w){escaped}(?!\w)")
-    else:
-        needle_re = re.compile(escaped)
+    needle_re = _needle_pattern(needle)
 
     for match in _ANY_PLACEHOLDER_RE.finditer(text):
         segment = text[last : match.start()]
