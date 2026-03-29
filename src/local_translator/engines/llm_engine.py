@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Literal
 
 LOGGER = logging.getLogger(__name__)
+PostEditMode = Literal["safe", "smart"]
 
 
 class LLMEngine:
@@ -54,37 +56,62 @@ class LLMEngine:
         )
         return self._llm
 
-    def _build_prompt(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def _build_prompt(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: PostEditMode = "safe",
+    ) -> str:
         glossary_lines = "\n".join(f"- {k} => {v}" for k, v in (glossary or {}).items()) or "(none)"
+        mode_rules = {
+            "safe": (
+                "SAFE MODE:\n"
+                "- Make minimal edits only (grammar, agreement, punctuation, light wording).\n"
+                "- Prefer source-faithful phrasing over stylistic rewrites.\n"
+            ),
+            "smart": (
+                "SMART MODE:\n"
+                "- Improve fluency and readability while preserving exact meaning.\n"
+                "- You may reorder clauses and tighten wording, but keep scope and facts unchanged.\n"
+            ),
+        }[mode]
         return (
             "System: You are a deterministic translation post-editor.\n"
-            "Rules:\n"
+            "Global rules:\n"
             "1) Keep meaning and scope identical to the draft.\n"
             "2) Do NOT add or remove information.\n"
-            "2b) Edit only [DRAFT_TRANSLATION]; do not rewrite [SOURCE].\n"
-            "3) Preserve every placeholder matching __LT_[A-Z_0-9]+__ exactly, character-for-character.\n"
-            "4) Keep numbers, URLs, code, commands, and identifiers unchanged.\n"
-            "5) Return only the edited segment text, with no commentary, no quotes, and no prefix.\n"
-            "6) If no edits are needed, return the draft unchanged.\n\n"
+            "3) Edit only [DRAFT_TRANSLATION]; do not rewrite [SOURCE].\n"
+            "4) Preserve every placeholder matching __LT_[A-Z_0-9]+__ exactly.\n"
+            "5) Keep numbers, URLs, code, commands, and identifiers unchanged.\n"
+            "6) Keep glossary target terms exactly as written in [GLOSSARY].\n"
+            "7) Return only the edited segment text, with no commentary.\n"
+            f"{mode_rules}\n"
             f"[SOURCE]\n{source}\n[/SOURCE]\n\n"
             f"[DRAFT_TRANSLATION]\n{translated}\n[/DRAFT_TRANSLATION]\n\n"
             f"[GLOSSARY]\n{glossary_lines}\n[/GLOSSARY]\n\n"
             "[OUTPUT]\n"
         )
 
-    def _max_tokens_budget(self, draft: str) -> int:
-        # Limit short-segment latency while keeping headroom on longer drafts.
-        heuristic_budget = int(len(draft) * 0.75) + 16
-        return max(32, min(self.max_tokens, heuristic_budget))
+    def _max_tokens_budget(self, draft: str, mode: PostEditMode) -> int:
+        ratio = 0.55 if mode == "safe" else 0.85
+        heuristic_budget = int(len(draft) * ratio) + 16
+        return max(24, min(self.max_tokens, heuristic_budget))
 
-    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: PostEditMode = "safe",
+    ) -> str:
         if not translated.strip() or not self.model_path:
             return translated
 
         llm = self._load_model()
-        prompt = self._build_prompt(source, translated, glossary)
-        max_tokens = self._max_tokens_budget(translated)
-        LOGGER.debug("LLM prompt (%d chars): %s", len(prompt), prompt)
+        prompt = self._build_prompt(source, translated, glossary, mode=mode)
+        max_tokens = self._max_tokens_budget(translated, mode)
+        LOGGER.debug("LLM prompt (%d chars, mode=%s)", len(prompt), mode)
         started = time.perf_counter()
         out = llm(
             prompt,
@@ -97,10 +124,10 @@ class LLMEngine:
         )
         candidate = out["choices"][0]["text"].strip()
         LOGGER.debug(
-            "LLM generation completed in %.3fs | max_tokens=%d | output_chars=%d | output=%s",
+            "LLM generation completed in %.3fs | mode=%s | max_tokens=%d | output_chars=%d",
             time.perf_counter() - started,
+            mode,
             max_tokens,
             len(candidate),
-            candidate,
         )
         return candidate

@@ -18,6 +18,8 @@ def test_format_report_contains_human_readable_metrics():
     assert "Fallbacks: 3" in output
     assert "Errors: 0" in output
     assert "Glossary replacements: 8" in output
+    assert "LLM calls: 0" in output
+    assert "LLM skipped: 0" in output
     assert "Time: 2.345s" in output
 
 
@@ -42,4 +44,6 @@ def test_report_to_dict_contains_expected_keys():
         "errors": ["oops"],
         "fallback_count": 1,
         "glossary_replacements": 4,
+        "llm_calls": 0,
+        "llm_skipped": 0,
     }

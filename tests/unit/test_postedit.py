@@ -9,7 +9,13 @@ class FakeLLM:
         self.response = response
         self.error = error
 
-    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
         if self.error:
             raise self.error
         return self.response

@@ -16,6 +16,7 @@ from local_translator.glossary.store import (
 )
 from local_translator.models.types import EngineMode, TranslationReport
 from local_translator.pipeline.chunker import segment_text
+from local_translator.pipeline.hybrid_strategy import decide_llm_postedit
 from local_translator.pipeline.postedit import post_edit_segment_with_metrics
 
 LOGGER = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ class TranslationPipeline:
         errors: list[str] = []
         fallback_count = 0
         glossary_replacements = 0
+        llm_calls = 0
+        llm_skipped = 0
 
         for idx, segment in enumerate(segments):
             segment_started = time.perf_counter()
@@ -83,16 +86,25 @@ class TranslationPipeline:
 
                 stage_started = time.perf_counter()
                 if self.config.engine_mode in {EngineMode.HYBRID, EngineMode.LLM}:
-                    outcome = post_edit_segment_with_metrics(
-                        self.llm,
-                        segment,
-                        with_glossary,
-                        self.glossary,
-                        self.config.llm,
-                    )
-                    final = outcome.text
-                    fallback_count += int(outcome.fallback_used)
-                    glossary_replacements += outcome.glossary_replacements
+                    glossary_entries = self.glossary.entries if hasattr(self.glossary, "entries") else self.glossary
+                    decision = decide_llm_postedit(segment, with_glossary, glossary_entries, self.config.llm)
+                    if decision.use_llm and decision.mode:
+                        llm_calls += 1
+                        outcome = post_edit_segment_with_metrics(
+                            self.llm,
+                            segment,
+                            with_glossary,
+                            self.glossary,
+                            self.config.llm,
+                            mode=decision.mode,
+                        )
+                        final = outcome.text
+                        fallback_count += int(outcome.fallback_used)
+                        glossary_replacements += outcome.glossary_replacements
+                    else:
+                        llm_skipped += 1
+                        final = with_glossary
+                        LOGGER.debug("Segment %d skipped LLM post-edit (%s)", idx, decision.reason)
                 else:
                     final = with_glossary
                 postedit_elapsed = time.perf_counter() - stage_started
@@ -128,6 +140,8 @@ class TranslationPipeline:
             elapsed_seconds=elapsed,
             fallback_count=fallback_count,
             glossary_replacements=glossary_replacements,
+            llm_calls=llm_calls,
+            llm_skipped=llm_skipped,
             errors=errors,
         )
         return TranslationResult(text=" ".join(outputs), report=report)

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+PostEditPolicy = Literal["off", "auto", "safe", "smart"]
+
 from local_translator.models.types import EngineMode
 
 LanguageCode = Literal["fr", "en"]
@@ -21,6 +23,10 @@ class LLMSettings:
     strict_validation: bool = True
     fallback_to_argos: bool = True
     max_expansion_ratio: float = 1.4
+    postedit_mode: PostEditPolicy = "auto"
+    skip_short_characters: int = 48
+    skip_high_placeholder_ratio: float = 0.12
+    smart_min_chars: int = 160
 
 
 @dataclass(slots=True)
