@@ -111,6 +111,7 @@ def text(
         "--llm-model",
         help="Path to local GGUF model (required for --engine llm/hybrid).",
     ),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logs."),
     report: bool = typer.Option(False, "--report", help="Print execution report summary."),
     report_json: Path | None = typer.Option(
         None,
@@ -118,6 +119,7 @@ def text(
         help="Write execution report as JSON to this path.",
     ),
 ):
+    setup_logging(verbose)
     try:
         result = translate_text(
             content,

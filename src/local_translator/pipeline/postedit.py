@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 from local_translator.config import LLMSettings
@@ -142,6 +143,34 @@ class PostEditValidator:
         return ValidationResult(True)
 
 
+def _placeholder_ids(text: str, pattern: re.Pattern[str]) -> list[str]:
+    return sorted(pattern.findall(text))
+
+
+def _log_placeholder_diff(candidate_protected: str, token_map: dict[str, str]) -> None:
+    expected_protected = _placeholder_ids(" ".join(token_map.keys()), _PLACEHOLDER_RE)
+    actual_protected = _placeholder_ids(candidate_protected, _PLACEHOLDER_RE)
+    expected_glossary = _placeholder_ids(" ".join(token_map.keys()), _GLOSSARY_PLACEHOLDER_RE)
+    actual_glossary = _placeholder_ids(candidate_protected, _GLOSSARY_PLACEHOLDER_RE)
+
+    expected_protected_set = set(expected_protected)
+    actual_protected_set = set(actual_protected)
+    expected_glossary_set = set(expected_glossary)
+    actual_glossary_set = set(actual_glossary)
+
+    LOGGER.debug(
+        (
+            "Placeholder diff | protected missing=%s extra=%s | glossary missing=%s extra=%s | "
+            "candidate_preview=%r"
+        ),
+        sorted(expected_protected_set - actual_protected_set),
+        sorted(actual_protected_set - expected_protected_set),
+        sorted(expected_glossary_set - actual_glossary_set),
+        sorted(actual_glossary_set - expected_glossary_set),
+        candidate_protected[:300],
+    )
+
+
 def post_edit_segment_with_metrics(
     llm_engine: LLMEngine | None,
     source_segment: str,
@@ -159,6 +188,7 @@ def post_edit_segment_with_metrics(
     source_protected = protector.protect(source_segment)
     translated_protected = protector.protect(translated_segment)
     glossary_protected = glossary_protector.protect(translated_protected.text, glossary)
+    llm_started = time.perf_counter()
 
     try:
         candidate_protected = llm_engine.post_edit(
@@ -169,7 +199,10 @@ def post_edit_segment_with_metrics(
     except Exception:
         LOGGER.warning("LLM post-edit failed; falling back to Argos output.", exc_info=True)
         return PostEditOutcome(text=translated_segment, fallback_used=True)
+    llm_elapsed = time.perf_counter() - llm_started
 
+    validation_started = time.perf_counter()
+    validation_elapsed = 0.0
     if llm_settings.strict_validation:
         validation = validator.validate_protected_output(
             source_protected=source_protected.text,
@@ -180,10 +213,17 @@ def post_edit_segment_with_metrics(
         )
         if not validation.is_valid:
             LOGGER.warning("LLM post-edit rejected (%s).", validation.reason)
+            if validation.reason in {"placeholder_mismatch", "glossary_placeholder_mismatch"}:
+                _log_placeholder_diff(
+                    candidate_protected,
+                    {**translated_protected.token_map, **glossary_protected.token_map},
+                )
             if llm_settings.fallback_to_argos:
                 return PostEditOutcome(text=translated_segment, fallback_used=True)
             return PostEditOutcome(text=candidate_protected)
+        validation_elapsed = time.perf_counter() - validation_started
 
+    restore_started = time.perf_counter()
     restored = protector.restore(candidate_protected, translated_protected.token_map)
     restored = glossary_protector.restore(restored, glossary_protected.token_map)
     if _PLACEHOLDER_RE.search(restored) or _GLOSSARY_PLACEHOLDER_RE.search(restored):
@@ -194,6 +234,13 @@ def post_edit_segment_with_metrics(
 
     # Enforce glossary one more time after post-edit for deterministic behavior.
     rendered, replacements = apply_glossary_with_stats(restored, glossary)
+    restore_elapsed = time.perf_counter() - restore_started
+    LOGGER.debug(
+        "Post-edit timings | llm=%.3fs validate=%.3fs restore=%.3fs",
+        llm_elapsed,
+        validation_elapsed,
+        restore_elapsed,
+    )
     return PostEditOutcome(text=rendered, glossary_replacements=replacements)
 
 

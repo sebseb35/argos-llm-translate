@@ -14,6 +14,8 @@ class LLMSettings:
     enabled: bool = False
     model_path: Path | None = None
     n_ctx: int = 2048
+    n_threads: int | None = None
+    n_batch: int = 256
     temperature: float = 0.0
     max_tokens: int = 256
     strict_validation: bool = True
