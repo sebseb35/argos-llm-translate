@@ -36,6 +36,7 @@ _PROTECTED_TOKEN_RE = re.compile(
     flags=re.MULTILINE,
 )
 _ANY_PLACEHOLDER_RE = re.compile(r"__LT_[A-Z0-9_]+__")
+_SEGMENT_BLOCK_RE = re.compile(r"\[SEGMENT_(\d+)\]\n(.*?)\n\[/SEGMENT_\1\]", flags=re.DOTALL)
 
 
 @dataclass(slots=True)
@@ -55,6 +56,7 @@ class PostEditOutcome:
     text: str
     fallback_used: bool = False
     glossary_replacements: int = 0
+    failure_reason: str | None = None
 
 
 class TokenProtector:
@@ -251,6 +253,93 @@ def _log_placeholder_diff(candidate_protected: str, token_map: dict[str, str]) -
     )
 
 
+def format_chunk_payload(
+    segment_indices: list[int],
+    source_segments: list[str],
+    draft_segments: list[str],
+) -> tuple[str, str]:
+    source_parts: list[str] = []
+    draft_parts: list[str] = []
+    for rel_idx, seg_idx in enumerate(segment_indices):
+        source_parts.append(f"[SEGMENT_{rel_idx}]\n{source_segments[seg_idx]}\n[/SEGMENT_{rel_idx}]")
+        draft_parts.append(f"[SEGMENT_{rel_idx}]\n{draft_segments[seg_idx]}\n[/SEGMENT_{rel_idx}]")
+    return "\n\n".join(source_parts), "\n\n".join(draft_parts)
+
+
+def parse_chunk_output(candidate: str, expected_segments: int) -> tuple[list[str] | None, str | None]:
+    blocks = list(_SEGMENT_BLOCK_RE.finditer(candidate))
+    if len(blocks) != expected_segments:
+        return None, "missing_segment"
+
+    consumed: list[str] = []
+    extracted: list[str] = []
+    cursor = 0
+    for expected_idx, block in enumerate(blocks):
+        if int(block.group(1)) != expected_idx:
+            return None, "malformed_markers"
+        interstitial = candidate[cursor : block.start()]
+        if interstitial.strip():
+            return None, "malformed_markers"
+        consumed.append(block.group(0))
+        extracted.append(block.group(2).strip())
+        cursor = block.end()
+    if candidate[cursor:].strip():
+        return None, "malformed_markers"
+    return extracted, None
+
+
+def apply_postedit_candidate(
+    source_segment: str,
+    translated_segment: str,
+    candidate_protected: str,
+    glossary: Glossary | dict[str, str],
+    llm_settings: LLMSettings,
+) -> PostEditOutcome:
+    protector = TokenProtector()
+    glossary_protector = GlossaryProtector()
+    validator = PostEditValidator()
+
+    source_protected = protector.protect(source_segment)
+    translated_protected = protector.protect(translated_segment)
+    glossary_protected = glossary_protector.protect(translated_protected.text, glossary)
+    combined_token_map = {**translated_protected.token_map, **glossary_protected.token_map}
+    canonical_candidate = _canonicalize_candidate_placeholders(candidate_protected, combined_token_map)
+    reinjected_candidate = _reinject_missing_placeholders(canonical_candidate, combined_token_map)
+
+    if llm_settings.strict_validation:
+        validation = validator.validate_protected_output(
+            source_protected=source_protected.text,
+            translated_protected=glossary_protected.text,
+            candidate_protected=reinjected_candidate,
+            token_map=combined_token_map,
+            max_expansion_ratio=llm_settings.max_expansion_ratio,
+        )
+        if not validation.is_valid:
+            if validation.reason in {"placeholder_mismatch", "glossary_placeholder_mismatch"}:
+                _log_placeholder_diff(reinjected_candidate, combined_token_map)
+            if llm_settings.fallback_to_argos:
+                return PostEditOutcome(
+                    text=translated_segment,
+                    fallback_used=True,
+                    failure_reason=validation.reason,
+                )
+            return PostEditOutcome(text=reinjected_candidate, failure_reason=validation.reason)
+
+    restored = protector.restore(reinjected_candidate, translated_protected.token_map)
+    restored = glossary_protector.restore(restored, glossary_protected.token_map)
+    if _PLACEHOLDER_RE.search(restored) or _GLOSSARY_PLACEHOLDER_RE.search(restored):
+        if llm_settings.fallback_to_argos:
+            return PostEditOutcome(
+                text=translated_segment,
+                fallback_used=True,
+                failure_reason="unresolved_placeholders",
+            )
+        return PostEditOutcome(text=restored, failure_reason="unresolved_placeholders")
+
+    rendered, replacements = apply_glossary_with_stats(restored, glossary)
+    return PostEditOutcome(text=rendered, glossary_replacements=replacements)
+
+
 def post_edit_segment_with_metrics(
     llm_engine: LLMEngine | None,
     source_segment: str,
@@ -264,8 +353,6 @@ def post_edit_segment_with_metrics(
 
     protector = TokenProtector()
     glossary_protector = GlossaryProtector()
-    validator = PostEditValidator()
-
     source_protected = protector.protect(source_segment)
     translated_protected = protector.protect(translated_segment)
     glossary_protected = glossary_protector.protect(translated_protected.text, glossary)
@@ -280,65 +367,25 @@ def post_edit_segment_with_metrics(
         )
     except Exception:
         LOGGER.warning("LLM post-edit failed; falling back to Argos output.", exc_info=True)
-        return PostEditOutcome(text=translated_segment, fallback_used=True)
+        return PostEditOutcome(text=translated_segment, fallback_used=True, failure_reason="llm_exception")
     llm_elapsed = time.perf_counter() - llm_started
-    combined_token_map = {**translated_protected.token_map, **glossary_protected.token_map}
-    canonical_candidate = _canonicalize_candidate_placeholders(candidate_protected, combined_token_map)
-    reinjected_candidate = _reinject_missing_placeholders(canonical_candidate, combined_token_map)
-    if canonical_candidate != candidate_protected:
-        LOGGER.debug(
-            "Canonicalized placeholders before validation | raw=%r canonical=%r",
-            candidate_protected[:300],
-            canonical_candidate[:300],
-        )
-    if reinjected_candidate != canonical_candidate:
-        LOGGER.debug(
-            "Reinjected literal tokens as placeholders before validation | canonical=%r reinjected=%r",
-            canonical_candidate[:300],
-            reinjected_candidate[:300],
-        )
-
-    validation_started = time.perf_counter()
-    validation_elapsed = 0.0
-    if llm_settings.strict_validation:
-        validation = validator.validate_protected_output(
-            source_protected=source_protected.text,
-            translated_protected=glossary_protected.text,
-            candidate_protected=reinjected_candidate,
-            token_map=combined_token_map,
-            max_expansion_ratio=llm_settings.max_expansion_ratio,
-        )
-        if not validation.is_valid:
-            LOGGER.warning("LLM post-edit rejected (%s).", validation.reason)
-            if validation.reason in {"placeholder_mismatch", "glossary_placeholder_mismatch"}:
-                _log_placeholder_diff(
-                    reinjected_candidate,
-                    combined_token_map,
-                )
-            if llm_settings.fallback_to_argos:
-                return PostEditOutcome(text=translated_segment, fallback_used=True)
-            return PostEditOutcome(text=reinjected_candidate)
-        validation_elapsed = time.perf_counter() - validation_started
-
-    restore_started = time.perf_counter()
-    restored = protector.restore(reinjected_candidate, translated_protected.token_map)
-    restored = glossary_protector.restore(restored, glossary_protected.token_map)
-    if _PLACEHOLDER_RE.search(restored) or _GLOSSARY_PLACEHOLDER_RE.search(restored):
-        LOGGER.warning("LLM output still contains unresolved placeholders; using Argos output.")
-        if llm_settings.fallback_to_argos:
-            return PostEditOutcome(text=translated_segment, fallback_used=True)
-        return PostEditOutcome(text=restored)
-
-    # Enforce glossary one more time after post-edit for deterministic behavior.
-    rendered, replacements = apply_glossary_with_stats(restored, glossary)
-    restore_elapsed = time.perf_counter() - restore_started
-    LOGGER.debug(
-        "Post-edit timings | llm=%.3fs validate=%.3fs restore=%.3fs",
-        llm_elapsed,
-        validation_elapsed,
-        restore_elapsed,
+    validate_started = time.perf_counter()
+    outcome = apply_postedit_candidate(
+        source_segment=source_segment,
+        translated_segment=translated_segment,
+        candidate_protected=candidate_protected,
+        glossary=glossary,
+        llm_settings=llm_settings,
     )
-    return PostEditOutcome(text=rendered, glossary_replacements=replacements)
+    validate_elapsed = time.perf_counter() - validate_started
+    LOGGER.debug(
+        "Post-edit timings | llm=%.3fs validate+restore=%.3fs fallback=%s reason=%s",
+        llm_elapsed,
+        validate_elapsed,
+        outcome.fallback_used,
+        outcome.failure_reason,
+    )
+    return outcome
 
 
 def post_edit_segment(

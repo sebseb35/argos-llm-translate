@@ -76,6 +76,12 @@ class LLMEngine:
                 "- You may reorder clauses and tighten wording, but keep scope and facts unchanged.\n"
             ),
         }[mode]
+        chunk_rule = ""
+        if "[SEGMENT_" in translated:
+            chunk_rule = (
+                "8) Preserve all [SEGMENT_i]...[/SEGMENT_i] markers exactly.\n"
+                "9) Return every segment block in the same order with no extra text.\n"
+            )
         return (
             "System: You are a deterministic translation post-editor.\n"
             "Global rules:\n"
@@ -86,6 +92,7 @@ class LLMEngine:
             "5) Keep numbers, URLs, code, commands, and identifiers unchanged.\n"
             "6) Keep glossary target terms exactly as written in [GLOSSARY].\n"
             "7) Return only the edited segment text, with no commentary.\n"
+            f"{chunk_rule}"
             f"{mode_rules}\n"
             f"[SOURCE]\n{source}\n[/SOURCE]\n\n"
             f"[DRAFT_TRANSLATION]\n{translated}\n[/DRAFT_TRANSLATION]\n\n"

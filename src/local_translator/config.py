@@ -27,6 +27,7 @@ class LLMSettings:
     skip_short_characters: int = 48
     skip_high_placeholder_ratio: float = 0.12
     smart_min_chars: int = 160
+    enable_chunking: bool = False
 
 
 @dataclass(slots=True)

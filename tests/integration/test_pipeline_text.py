@@ -102,6 +102,34 @@ class PassthroughLLM:
         return translated
 
 
+class ChunkEchoLLM:
+    def __init__(self):
+        self.calls = 0
+
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
+        self.calls += 1
+        return translated
+
+
+class ChunkBrokenLLM:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
+        if "[SEGMENT_0]" in translated:
+            return "[SEGMENT_0]\nOnly first\n[/SEGMENT_0]"
+        return translated
+
+
 def test_pipeline_argos_mode(monkeypatch):
     cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.ARGOS)
     pipeline = TranslationPipeline(cfg)
@@ -370,3 +398,33 @@ def test_pipeline_hybrid_uses_smart_mode_for_long_segments(monkeypatch):
 
     pipeline.translate_text("mot de passe " * 8)
     assert "smart" in spy_llm.modes
+
+
+def test_pipeline_chunking_merges_three_segments_into_one_llm_call(monkeypatch):
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID)
+    cfg.llm.enabled = True
+    cfg.llm.enable_chunking = True
+    cfg.llm.skip_short_characters = 1
+    pipeline = TranslationPipeline(cfg)
+    spy_llm = ChunkEchoLLM()
+    monkeypatch.setattr(pipeline, "argos", DummyArgos())
+    monkeypatch.setattr(pipeline, "llm", spy_llm)
+
+    result = pipeline.translate_text("a. b. c.")
+    assert result.report.segment_count == 3
+    assert result.report.llm_calls == 1
+    assert spy_llm.calls == 1
+
+
+def test_pipeline_chunking_falls_back_to_per_segment_when_markers_invalid(monkeypatch):
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID)
+    cfg.llm.enabled = True
+    cfg.llm.enable_chunking = True
+    cfg.llm.skip_short_characters = 1
+    pipeline = TranslationPipeline(cfg)
+    monkeypatch.setattr(pipeline, "argos", DummyArgos())
+    monkeypatch.setattr(pipeline, "llm", ChunkBrokenLLM())
+
+    result = pipeline.translate_text("a. b. c.")
+    assert result.report.segment_count == 3
+    assert result.report.llm_calls == 4  # 1 failed chunk call + 3 per-segment fallback calls
