@@ -19,6 +19,7 @@ _GLOSSARY_PLACEHOLDER_RE = re.compile(r"__LT_GLOSSARY_PROTECTED_(\d{4})__")
 _PROTECTED_TOKEN_RE = re.compile(
     "|".join(
         [
+            r"__LT_[A-Z0-9_]+__",  # internal pipeline placeholders
             r"```[\s\S]*?```",  # fenced code blocks
             r"`[^`\n]+`",  # inline code / commands
             r"https?://[^\s)\]>\"']+",  # URLs
@@ -27,12 +28,13 @@ _PROTECTED_TOKEN_RE = re.compile(
             r"\$\{[^}]+\}|\{\{[^}]+\}\}|%\([^)]+\)s",  # placeholders/templates
             r"\bv?\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9]+)?\b",  # versions
             r"\b\d+(?:[.,]\d+)?%?\b",  # numeric values
-            r"\b(?:[A-Z]{2,}[A-Z0-9_]*|[a-z]+[A-Z][A-Za-z0-9]*|[A-Za-z_]*\d+[A-Za-z0-9_]*)\b",  # identifiers
+            r"\b(?:[A-Za-z_]+[A-Za-z0-9_]*_[A-Za-z0-9_]+|[a-z]+[A-Z][A-Za-z0-9]*|[A-Za-z_]+\d+[A-Za-z0-9_]*)\b",  # identifiers
             r"\b[A-Za-z][\w.-]*\s+(?:--?[\w-]+(?:[= ]\S+)\s*)+",  # CLI snippets
         ]
     ),
     flags=re.MULTILINE,
 )
+_ANY_PLACEHOLDER_RE = re.compile(r"__LT_[A-Z0-9_]+__")
 
 
 @dataclass(slots=True)
@@ -169,6 +171,36 @@ def _canonicalize_candidate_placeholders(candidate_protected: str, token_map: di
     return canonical
 
 
+def _replace_once_outside_placeholders(text: str, needle: str, replacement: str) -> tuple[str, bool]:
+    if not needle:
+        return text, False
+
+    last = 0
+    out_parts: list[str] = []
+    replaced = False
+    escaped = re.escape(needle)
+    if re.search(r"\w", needle):
+        needle_re = re.compile(rf"(?<!\w){escaped}(?!\w)")
+    else:
+        needle_re = re.compile(escaped)
+
+    for match in _ANY_PLACEHOLDER_RE.finditer(text):
+        segment = text[last : match.start()]
+        if not replaced:
+            segment, count = needle_re.subn(replacement, segment, count=1)
+            replaced = count > 0
+        out_parts.append(segment)
+        out_parts.append(match.group(0))
+        last = match.end()
+
+    tail = text[last:]
+    if not replaced:
+        tail, count = needle_re.subn(replacement, tail, count=1)
+        replaced = count > 0
+    out_parts.append(tail)
+    return "".join(out_parts), replaced
+
+
 def _reinject_missing_placeholders(candidate_protected: str, token_map: dict[str, str]) -> str:
     """Reinsert expected placeholders when the LLM echoed the exact token literal.
 
@@ -185,8 +217,7 @@ def _reinject_missing_placeholders(candidate_protected: str, token_map: dict[str
     for placeholder, token in sorted(token_map.items(), key=lambda item: (-len(item[1]), item[0])):
         if placeholder in restored or not token:
             continue
-        if token in restored:
-            restored = restored.replace(token, placeholder, 1)
+        restored, _ = _replace_once_outside_placeholders(restored, token, placeholder)
     return restored
 
 
