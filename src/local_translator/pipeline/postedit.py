@@ -147,6 +147,28 @@ def _placeholder_ids(text: str, pattern: re.Pattern[str]) -> list[str]:
     return sorted(pattern.findall(text))
 
 
+def _placeholder_variants(token: str) -> tuple[re.Pattern[str], ...]:
+    normalized = token.strip("_")
+    parts = [part for part in normalized.split("_") if part]
+    if not parts:
+        return (re.compile(re.escape(token)),)
+
+    exact = re.compile(re.escape(token))
+    normalized_pattern = re.compile(
+        rf"(?<!\w)_*{r'[\W_]*'.join(re.escape(part) for part in parts)}_*(?!\w)",
+        flags=re.IGNORECASE,
+    )
+    return exact, normalized_pattern
+
+
+def _canonicalize_candidate_placeholders(candidate_protected: str, token_map: dict[str, str]) -> str:
+    canonical = candidate_protected
+    for placeholder in sorted(token_map.keys(), key=lambda item: (-len(item), item)):
+        for variant in _placeholder_variants(placeholder):
+            canonical = variant.sub(placeholder, canonical)
+    return canonical
+
+
 def _log_placeholder_diff(candidate_protected: str, token_map: dict[str, str]) -> None:
     expected_protected = _placeholder_ids(" ".join(token_map.keys()), _PLACEHOLDER_RE)
     actual_protected = _placeholder_ids(candidate_protected, _PLACEHOLDER_RE)
@@ -200,6 +222,14 @@ def post_edit_segment_with_metrics(
         LOGGER.warning("LLM post-edit failed; falling back to Argos output.", exc_info=True)
         return PostEditOutcome(text=translated_segment, fallback_used=True)
     llm_elapsed = time.perf_counter() - llm_started
+    combined_token_map = {**translated_protected.token_map, **glossary_protected.token_map}
+    canonical_candidate = _canonicalize_candidate_placeholders(candidate_protected, combined_token_map)
+    if canonical_candidate != candidate_protected:
+        LOGGER.debug(
+            "Canonicalized placeholders before validation | raw=%r canonical=%r",
+            candidate_protected[:300],
+            canonical_candidate[:300],
+        )
 
     validation_started = time.perf_counter()
     validation_elapsed = 0.0
@@ -207,24 +237,24 @@ def post_edit_segment_with_metrics(
         validation = validator.validate_protected_output(
             source_protected=source_protected.text,
             translated_protected=glossary_protected.text,
-            candidate_protected=candidate_protected,
-            token_map={**translated_protected.token_map, **glossary_protected.token_map},
+            candidate_protected=canonical_candidate,
+            token_map=combined_token_map,
             max_expansion_ratio=llm_settings.max_expansion_ratio,
         )
         if not validation.is_valid:
             LOGGER.warning("LLM post-edit rejected (%s).", validation.reason)
             if validation.reason in {"placeholder_mismatch", "glossary_placeholder_mismatch"}:
                 _log_placeholder_diff(
-                    candidate_protected,
-                    {**translated_protected.token_map, **glossary_protected.token_map},
+                    canonical_candidate,
+                    combined_token_map,
                 )
             if llm_settings.fallback_to_argos:
                 return PostEditOutcome(text=translated_segment, fallback_used=True)
-            return PostEditOutcome(text=candidate_protected)
+            return PostEditOutcome(text=canonical_candidate)
         validation_elapsed = time.perf_counter() - validation_started
 
     restore_started = time.perf_counter()
-    restored = protector.restore(candidate_protected, translated_protected.token_map)
+    restored = protector.restore(canonical_candidate, translated_protected.token_map)
     restored = glossary_protector.restore(restored, glossary_protected.token_map)
     if _PLACEHOLDER_RE.search(restored) or _GLOSSARY_PLACEHOLDER_RE.search(restored):
         LOGGER.warning("LLM output still contains unresolved placeholders; using Argos output.")

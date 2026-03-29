@@ -157,3 +157,17 @@ def test_post_edit_restores_glossary_placeholders_when_valid():
     )
     assert "production deployment" in result
     assert "password" in result
+
+
+def test_post_edit_accepts_normalized_placeholder_variants():
+    draft = "Keep https://example.com and production deployment."
+    candidate = "Keep LT PROTECTED 0000 and LT GLOSSARY PROTECTED 0000."
+    result = post_edit_segment(
+        llm_engine=FakeLLM(response=candidate),
+        source_segment="source",
+        translated_segment=draft,
+        glossary={"mise en production": "production deployment"},
+        llm_settings=LLMSettings(strict_validation=True, fallback_to_argos=True),
+    )
+    assert "https://example.com" in result
+    assert "production deployment" in result
