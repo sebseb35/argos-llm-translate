@@ -61,6 +61,7 @@ class LLMEngine:
             "Rules:\n"
             "1) Keep meaning and scope identical to the draft.\n"
             "2) Do NOT add or remove information.\n"
+            "2b) Edit only [DRAFT_TRANSLATION]; do not rewrite [SOURCE].\n"
             "3) Preserve every placeholder matching __LT_[A-Z_0-9]+__ exactly, character-for-character.\n"
             "4) Keep numbers, URLs, code, commands, and identifiers unchanged.\n"
             "5) Return only the edited segment text, with no commentary, no quotes, and no prefix.\n"

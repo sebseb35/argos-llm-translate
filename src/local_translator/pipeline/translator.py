@@ -73,6 +73,14 @@ class TranslationPipeline:
                 glossary_replacements += replacements
                 glossary_elapsed = time.perf_counter() - stage_started
 
+                # Normalize Argos-normalized glossary placeholders (e.g. "LT GLOSSARY TERM 0000")
+                # back to canonical target terms before LLM post-editing. This avoids turning
+                # these artifacts into fragmented protected tokens during strict validation.
+                with_glossary, pre_postedit_restore_replacements = restore_glossary_terms_with_stats(
+                    with_glossary, glossary_token_map
+                )
+                glossary_replacements += pre_postedit_restore_replacements
+
                 stage_started = time.perf_counter()
                 if self.config.engine_mode in {EngineMode.HYBRID, EngineMode.LLM}:
                     outcome = post_edit_segment_with_metrics(
