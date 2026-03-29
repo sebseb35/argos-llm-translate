@@ -4,6 +4,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from typing import Literal
 
 from local_translator.config import LLMSettings
 from local_translator.engines.llm_engine import LLMEngine
@@ -256,6 +257,7 @@ def post_edit_segment_with_metrics(
     translated_segment: str,
     glossary: Glossary | dict[str, str],
     llm_settings: LLMSettings,
+    mode: Literal["safe", "smart"] = "safe",
 ) -> PostEditOutcome:
     if llm_engine is None:
         return PostEditOutcome(text=translated_segment)
@@ -274,6 +276,7 @@ def post_edit_segment_with_metrics(
             source_protected.text,
             glossary_protected.text,
             glossary=glossary.entries if isinstance(glossary, Glossary) else glossary,
+            mode=mode,
         )
     except Exception:
         LOGGER.warning("LLM post-edit failed; falling back to Argos output.", exc_info=True)
@@ -344,6 +347,7 @@ def post_edit_segment(
     translated_segment: str,
     glossary: Glossary | dict[str, str],
     llm_settings: LLMSettings,
+    mode: Literal["safe", "smart"] = "safe",
 ) -> str:
     return post_edit_segment_with_metrics(
         llm_engine=llm_engine,
@@ -351,4 +355,5 @@ def post_edit_segment(
         translated_segment=translated_segment,
         glossary=glossary,
         llm_settings=llm_settings,
+        mode=mode,
     ).text

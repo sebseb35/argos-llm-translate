@@ -23,18 +23,36 @@ class FrenchToEnglishArgos:
 
 
 class DummyLLM:
-    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
         # Tries to rewrite glossary terms; strict placeholder validation should reject this.
         return translated.replace("password", "credential")
 
 
 class RewritingLLM:
-    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
         return translated.replace("acceptance testing", "recipe").replace("work package", "batch")
 
 
 class FailingLLM:
-    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
         raise RuntimeError("post-edit failed")
 
 
@@ -56,8 +74,31 @@ class PlaceholderNormalizingArgos:
         )
 
 
+
+
+class ModeAwareLLM:
+    def __init__(self):
+        self.modes: list[str] = []
+
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
+        self.modes.append(mode)
+        return translated
+
+
 class PassthroughLLM:
-    def post_edit(self, source: str, translated: str, glossary: dict[str, str] | None = None) -> str:
+    def post_edit(
+        self,
+        source: str,
+        translated: str,
+        glossary: dict[str, str] | None = None,
+        mode: str = "safe",
+    ) -> str:
         return translated
 
 
@@ -89,6 +130,7 @@ entries:
         glossary_path=glossary_path,
     )
     cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 1
     pipeline = TranslationPipeline(cfg)
     monkeypatch.setattr(pipeline, "argos", DummyArgos())
     monkeypatch.setattr(pipeline, "llm", DummyLLM())
@@ -117,6 +159,7 @@ entries:
         glossary_path=glossary_path,
     )
     cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 1
     pipeline = TranslationPipeline(cfg)
     monkeypatch.setattr(pipeline, "argos", DummyArgos())
     monkeypatch.setattr(pipeline, "llm", FailingLLM())
@@ -162,6 +205,7 @@ entries:
     )
     cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID, glossary_path=glossary_path)
     cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 1
     pipeline = TranslationPipeline(cfg)
     monkeypatch.setattr(pipeline, "argos", FrenchToEnglishArgos())
     monkeypatch.setattr(pipeline, "llm", RewritingLLM())
@@ -187,6 +231,7 @@ entries:
     )
     cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID, glossary_path=glossary_path)
     cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 1
     pipeline = TranslationPipeline(cfg)
     monkeypatch.setattr(pipeline, "argos", FrenchToEnglishArgos())
     monkeypatch.setattr(pipeline, "llm", FailingLLM())
@@ -236,6 +281,7 @@ entries:
     )
     cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID, glossary_path=glossary_path)
     cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 1
     pipeline = TranslationPipeline(cfg)
     monkeypatch.setattr(pipeline, "argos", PlaceholderNormalizingArgos())
     monkeypatch.setattr(pipeline, "llm", PassthroughLLM())
@@ -263,6 +309,7 @@ entries:
     )
     cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID, glossary_path=glossary_path)
     cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 1
     pipeline = TranslationPipeline(cfg)
     monkeypatch.setattr(pipeline, "argos", PlaceholderNormalizingArgos())
     monkeypatch.setattr(pipeline, "llm", FailingLLM())
@@ -294,3 +341,32 @@ entries:
 
     result = pipeline.translate_text("mise en production puis mise en production")
     assert result.text == "production deployment puis production deployment"
+
+
+def test_pipeline_hybrid_skips_llm_for_short_segments(monkeypatch):
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID)
+    cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 20
+    pipeline = TranslationPipeline(cfg)
+    spy_llm = ModeAwareLLM()
+    monkeypatch.setattr(pipeline, "argos", DummyArgos())
+    monkeypatch.setattr(pipeline, "llm", spy_llm)
+
+    result = pipeline.translate_text("ok")
+    assert spy_llm.modes == []
+    assert result.report.llm_calls == 0
+    assert result.report.llm_skipped == 1
+
+
+def test_pipeline_hybrid_uses_smart_mode_for_long_segments(monkeypatch):
+    cfg = RuntimeConfig(source_lang="fr", target_lang="en", engine_mode=EngineMode.HYBRID)
+    cfg.llm.enabled = True
+    cfg.llm.skip_short_characters = 5
+    cfg.llm.smart_min_chars = 40
+    pipeline = TranslationPipeline(cfg)
+    spy_llm = ModeAwareLLM()
+    monkeypatch.setattr(pipeline, "argos", DummyArgos())
+    monkeypatch.setattr(pipeline, "llm", spy_llm)
+
+    pipeline.translate_text("mot de passe " * 8)
+    assert "smart" in spy_llm.modes

@@ -25,4 +25,6 @@ class TranslationReport:
     elapsed_seconds: float
     fallback_count: int = 0
     glossary_replacements: int = 0
+    llm_calls: int = 0
+    llm_skipped: int = 0
     errors: list[str] = field(default_factory=list)

@@ -83,3 +83,5 @@ def test_text_report_json_export(tmp_path, monkeypatch):
     assert payload["error_count"] == 0
     assert "fallback_count" in payload
     assert "glossary_replacements" in payload
+    assert "llm_calls" in payload
+    assert "llm_skipped" in payload

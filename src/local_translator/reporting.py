@@ -13,6 +13,8 @@ def format_report(report: TranslationReport) -> str:
         f"Fallbacks: {report.fallback_count}",
         f"Errors: {len(report.errors)}",
         f"Glossary replacements: {report.glossary_replacements}",
+        f"LLM calls: {report.llm_calls}",
+        f"LLM skipped: {report.llm_skipped}",
         f"Time: {report.elapsed_seconds:.3f}s",
     ]
     return "\n".join(lines)
@@ -28,6 +30,8 @@ def report_to_dict(report: TranslationReport) -> dict[str, object]:
         "errors": report.errors,
         "fallback_count": report.fallback_count,
         "glossary_replacements": report.glossary_replacements,
+        "llm_calls": report.llm_calls,
+        "llm_skipped": report.llm_skipped,
     }
 
 
